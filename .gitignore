@@ -37,6 +37,7 @@ node_modules/
 dist/
 output/
 infra/cdk.out/
+infra/lib/
 .env*
 !.env.example
 .playwright-cli/

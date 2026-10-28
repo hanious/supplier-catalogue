@@ -21,6 +21,15 @@ type API struct {
 	Static http.Handler
 }
 
+// productView excludes supplier metadata so its representation changes only
+// when the visible catalogue generation advances.
+type productView struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Price  int64  `json:"price"`
+	Active bool   `json:"active"`
+}
+
 // Handler validates demo operations and serves bounded catalogue views.
 func (a *API) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -273,7 +282,7 @@ func (a *API) products(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	products := make([]Product, 0, len(rows))
+	products := make([]productView, 0, len(rows))
 	for _, row := range rows {
 		var p Product
 		if err = json.Unmarshal([]byte(row.Data), &p); err != nil {
@@ -286,7 +295,7 @@ func (a *API) products(w http.ResponseWriter, r *http.Request) {
 		if filter == "active" && !p.Active || filter == "withdrawn" && p.Active {
 			continue
 		}
-		products = append(products, p)
+		products = append(products, productView{ID: p.ID, Name: p.Name, Price: p.Price, Active: p.Active})
 	}
 	writeJSON(w, 200, map[string]any{"items": products, "next_cursor": next, "generation": c.Generation})
 }

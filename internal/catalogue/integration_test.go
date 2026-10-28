@@ -659,3 +659,40 @@ func TestIntegrationHistoryPagesUseSavedChronology(t *testing.T) {
 		t.Fatalf("older history = %+v", older)
 	}
 }
+
+func TestIntegrationMetadataOnlyUpdatesKeepCatalogueRepresentationStable(t *testing.T) {
+	s := integrationStore(t)
+	api := (&API{Store: s}).Handler()
+	ctx := context.Background()
+	get := func() *httptest.ResponseRecorder {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		api.ServeHTTP(rec, httptest.NewRequest("GET", "/api/products", nil))
+		if rec.Code != 200 {
+			t.Fatalf("products = %d: %s", rec.Code, rec.Body.String())
+		}
+		return rec
+	}
+	before := get()
+	j := startTest(t, s, "normal")
+	owner, err := s.Acquire(ctx, j.ID, "metadata-owner", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := BaselineProduct(1)
+	p.Version = 2
+	if err = s.Commit(ctx, &owner, Record{SourceID: "metadata-only", Product: p}); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := s.Product(ctx, j.Epoch, p.ID)
+	if err != nil || stored.Version != 2 {
+		t.Fatalf("supplier ordering was not advanced: %+v, %v", stored, err)
+	}
+	after := get()
+	if before.Body.String() != after.Body.String() || before.Header().Get("ETag") != after.Header().Get("ETag") {
+		t.Fatal("internal ordering change invalidated the visible catalogue")
+	}
+	if strings.Contains(after.Body.String(), `"version"`) {
+		t.Fatal("supplier metadata leaked into the cacheable staff representation")
+	}
+}
