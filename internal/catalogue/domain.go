@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 )
 
@@ -52,6 +51,7 @@ type Job struct {
 	Scenario    string `json:"scenario"`
 	Status      string `json:"status"`
 	Cursor      int    `json:"cursor"`
+	Offset      int    `json:"offset"`
 	Processed   int    `json:"processed"`
 	Total       int    `json:"total"`
 	Counts      Counts `json:"counts"`
@@ -68,6 +68,7 @@ type Job struct {
 
 // Manifest describes an immutable supplier update; Restored only controls availability.
 type Manifest struct {
+	Epoch    string `json:"epoch"`
 	ID       string `json:"id"`
 	Scenario string `json:"scenario"`
 	Sequence int64  `json:"sequence"`
@@ -92,9 +93,22 @@ var ErrConflict = errors.New("state changed; retry the operation")
 // ErrNotFound identifies a missing or no longer retained update.
 var ErrNotFound = errors.New("not found")
 
+// ErrInvalid identifies a rejected staff request without exposing storage errors.
+var ErrInvalid = errors.New("invalid request")
+
+func invalid(message string) error { return fmt.Errorf("%w: %s", ErrInvalid, message) }
+
 // ValidID accepts bounded identifiers used in paths and database keys.
 func ValidID(id string) bool {
-	return regexp.MustCompile(`^[A-Za-z0-9_-]{1,80}$`).MatchString(id)
+	if len(id) < 1 || len(id) > 80 {
+		return false
+	}
+	for _, c := range []byte(id) {
+		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '_' && c != '-' {
+			return false
+		}
+	}
+	return true
 }
 
 // Decide applies supplier chronology and normalized business-content equality.
@@ -129,6 +143,9 @@ func Decide(old *Product, record Record) Result {
 		return r
 	}
 	r.Kind = "changed"
+	if old != nil && p.ID == old.ID && p.Name == old.Name && p.Price == old.Price && p.Active == old.Active {
+		r.Kind = "ignored"
+	}
 	if old == nil {
 		r.Kind = "added"
 	}
