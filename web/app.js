@@ -8,11 +8,12 @@
     cleanupPending: false,
     baselineReady: false,
     generation: null,
+    dataRevision: null,
     epoch: null,
     view: "catalogue",
-    cursor: "",
-    pages: [],
-    next: "",
+    page: 1,
+    pageCount: 0,
+    total: 0,
     timer: null,
     busy: false,
     pending: null,
@@ -35,14 +36,87 @@
     out_of_order:
       "After Reset demo: change 1, withdraw 1, ignore 2 older records. The withdrawn product stays withdrawn.",
     outage:
-      "Save 300 records, retry the supplier three times, then interrupt. Restore supplier, then Resume update; previously saved records stay saved.",
+      "Save 30 of 100 records, then interrupt after three failed supplier requests. Restore supplier, then Resume update; saved records stay saved.",
     invalid:
       "Save 2 valid changes, show 2 issues, and finish with issues. Existing valid prices stay saved.",
-    slow: "Import 10,000 records. Close and reopen this page; processing continues and saved progress reloads.",
+    slow: "Import 100 records slowly, in ten batches. Close and reopen this page; processing continues and saved progress reloads.",
     full: "Import all 10,000 records, with durable progress and a terminal supplier marker. Duration depends on storage throughput.",
     correction:
       "Send newer valid details for two records. A prior product issue resolves; an unidentified record still needs a supplier correction with its source identity.",
   };
+  const views = {
+    catalogue: {
+      sorts: [
+        ["id", "Product ID"],
+        ["name", "Product name"],
+        ["price", "Price"],
+        ["status", "Status"],
+      ],
+      filters: [
+        ["", "All products"],
+        ["active", "Active"],
+        ["withdrawn", "Withdrawn"],
+      ],
+      order: "asc",
+    },
+    changes: {
+      sorts: [
+        ["source_id", "Record ID"],
+        ["name", "Product name"],
+        ["kind", "Change type"],
+      ],
+      filters: [
+        ["", "All changes"],
+        ["added", "Added"],
+        ["changed", "Changed"],
+        ["withdrawn", "Withdrawn"],
+      ],
+      order: "asc",
+    },
+    issues: {
+      sorts: [
+        ["source_id", "Record ID"],
+        ["name", "Product name"],
+        ["status", "Resolution"],
+      ],
+      filters: [
+        ["", "All issues"],
+        ["open", "Needs correction"],
+        ["resolved", "Resolved"],
+      ],
+      order: "asc",
+    },
+    history: {
+      sorts: [
+        ["created_at", "Started at"],
+        ["status", "Result"],
+        ["processed", "Records processed"],
+      ],
+      filters: [
+        ["", "All updates"],
+        ...Object.entries(labels).map(([value, label]) => [value, label]),
+      ],
+      order: "desc",
+    },
+  };
+  function configureFilters() {
+    const config = views[state.view];
+    for (const [id, options] of [
+      ["sort-by", config.sorts],
+      ["filter-status", config.filters],
+    ]) {
+      $(id).replaceChildren(
+        ...options.map(([value, label]) => {
+          const option = document.createElement("option");
+          option.value = value;
+          option.textContent = label;
+          return option;
+        }),
+      );
+    }
+    $("sort-order").value = config.order;
+    $("search").value = "";
+  }
   const money = (cents) =>
     new Intl.NumberFormat("en-US", {
       style: "currency",
@@ -64,6 +138,7 @@
   }
   function productName(p) {
     const span = document.createElement("span");
+    span.className = "product-name";
     span.append(text(p.name || "Unidentified product"));
     const id = document.createElement("span");
     id.className = "product-id";
@@ -112,11 +187,15 @@
       const previous = state.job;
       const changed =
         state.generation !== data.generation ||
+        state.dataRevision !== data.data_revision ||
         state.epoch !== data.epoch ||
         previous?.status !== data.job?.status ||
-        previous?.id !== data.job?.id;
+        previous?.id !== data.job?.id ||
+        (state.view !== "catalogue" &&
+          previous?.processed !== data.job?.processed);
       state.job = data.job;
       state.generation = data.generation;
+      state.dataRevision = data.data_revision;
       state.epoch = data.epoch;
       state.cleanupPending = data.cleanup_pending;
       state.baselineReady = data.baseline_ready;
@@ -128,9 +207,9 @@
         ? j.message ||
           `${j.processed.toLocaleString()} / ${j.total.toLocaleString()} records processed · saved changes are visible now.`
         : data.baseline_ready
-          ? "10,000-product baseline loaded. Choose a scenario, then start an update."
-          : "Use Reset demo to load the 10,000-product baseline before starting a scenario.";
-      $("progress").max = j?.total || 10000;
+          ? "100-product baseline loaded. Choose a scenario, then start an update."
+          : "Use Reset demo to load the 100-product baseline before starting a scenario.";
+      $("progress").max = j?.total || 100;
       $("progress").value = j?.processed || 0;
       $("progress-label").textContent = j
         ? `${j.processed.toLocaleString()} of ${j.total.toLocaleString()} records processed`
@@ -183,8 +262,7 @@
         $("published").hidden = false;
       }
       if (path.endsWith("reset")) {
-        state.cursor = "";
-        state.pages = [];
+        state.page = 1;
         state.cache.clear();
         $("published").hidden = true;
       }
@@ -198,10 +276,11 @@
   }
   function headers(titles) {
     const tr = document.createElement("tr");
-    for (const title of titles) {
+    for (const title of ["No.", ...titles]) {
       const th = document.createElement("th");
       th.scope = "col";
       th.textContent = title;
+      if (title === "No.") th.setAttribute("aria-label", "Item number");
       tr.append(th);
     }
     $("table-head").replaceChildren(tr);
@@ -224,16 +303,24 @@
   }
   async function loadView() {
     const sequence = ++state.viewSequence;
-    const query = new URLSearchParams({ cursor: state.cursor, limit: "50" });
+    const query = new URLSearchParams({
+      page: String(state.page),
+      limit: "50",
+      q: $("search").value,
+      status: $("filter-status").value,
+      sort: $("sort-by").value,
+      order: $("sort-order").value,
+    });
     let endpoint = state.view === "catalogue" ? "products" : state.view;
-    if (state.view === "catalogue") {
-      query.set("q", $("search").value);
-      query.set("status", $("filter-status").value);
-    }
     if (state.view === "changes") {
       if (!state.job && !state.inspectedUpdate) {
-        state.next = "";
-        render([]);
+        render({
+          items: [],
+          page: 0,
+          total_pages: 0,
+          total_items: 0,
+          page_size: 50,
+        });
         return;
       }
       query.set("update_id", state.inspectedUpdate || state.job.id);
@@ -255,17 +342,19 @@
         if (state.cache.size >= 12) state.cache.clear();
         state.cache.set(path, { etag: response.headers.get("ETag"), data });
       }
-      state.next = data.next_cursor || "";
-      render(data.items);
+      render(data);
     } catch (error) {
       showError(error.message);
     }
   }
-  function render(items) {
+  function render(data) {
+    const items = data.items;
+    state.page = data.page || 1;
+    state.pageCount = data.total_pages;
+    state.total = data.total_items;
     const catalogue = state.view === "catalogue";
-    $("filters").hidden = !catalogue;
     $("view-note").textContent = catalogue
-      ? "50 catalogue records per page. Filters apply to the current page."
+      ? `${data.total_items.toLocaleString()} matching products · search, filters and sorting apply across the whole catalogue.`
       : state.view === "changes"
         ? "Accepted changes for the latest update. Ignored deliveries do not create change entries."
         : state.view === "issues"
@@ -289,6 +378,9 @@
     const rows = [];
     for (const item of items) {
       const tr = document.createElement("tr");
+      tr.append(
+        cell((state.page - 1) * data.page_size + rows.length + 1, "row-number"),
+      );
       if (catalogue) {
         tr.dataset.state = item.active ? "active" : "withdrawn";
         tr.append(
@@ -363,15 +455,15 @@
     }
     $("table-body").replaceChildren(...rows);
     $("empty").hidden = items.length > 0;
-    $("previous").disabled = state.pages.length === 0;
-    $("next").disabled = !state.next;
-    $("page-number").textContent = `Page ${state.pages.length + 1}`;
+    $("previous").disabled = state.page <= 1 || state.total === 0;
+    $("next").disabled = state.page >= state.pageCount;
+    $("page-number").textContent =
+      `Page ${data.page} of ${data.total_pages} · ${data.total_items.toLocaleString()} records`;
   }
   function switchView(view) {
     state.view = view;
-    state.cursor = "";
-    state.pages = [];
-    state.next = "";
+    state.page = 1;
+    configureFilters();
     for (const button of document.querySelectorAll("[role=tab]")) {
       const selected = button.id === `tab-${view}`;
       button.setAttribute("aria-selected", String(selected));
@@ -401,7 +493,7 @@
   $("reset").addEventListener("click", () => {
     if (
       confirm(
-        "Restore a fresh 10,000-product synthetic baseline and clear previous demo records? An interrupted update will be abandoned.",
+        "Restore a fresh 100-product synthetic baseline and clear previous demo records? An interrupted update will be abandoned.",
       )
     )
       action("/api/demo/reset", { confirm: "reset synthetic demo" });
@@ -417,15 +509,15 @@
   $("expected").textContent = `Expected: ${expectations.normal}`;
   $("filters").addEventListener("submit", (event) => {
     event.preventDefault();
+    state.page = 1;
     loadView();
   });
   $("next").addEventListener("click", () => {
-    state.pages.push(state.cursor);
-    state.cursor = state.next;
+    state.page++;
     loadView();
   });
   $("previous").addEventListener("click", () => {
-    state.cursor = state.pages.pop() || "";
+    state.page = Math.max(1, state.page - 1);
     loadView();
   });
   const tabs = [...document.querySelectorAll("[role=tab]")];
@@ -449,5 +541,8 @@
     });
   }
   window.addEventListener("pagehide", clearPoll);
+  if (window.matchMedia("(max-width: 900px)").matches)
+    $("demo-controls").open = false;
+  configureFilters();
   status();
 })();

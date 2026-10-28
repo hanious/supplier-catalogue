@@ -9,12 +9,18 @@ Run the local stack with Docker Desktop's Linux engine:
 docker compose up --build -d
 ```
 
-Open http://localhost:55801. Initialization loads 10,000 synthetic products into
+Open http://localhost:55801. Initialization loads 100 synthetic products into
 persistent DynamoDB Local storage. Choose a scenario under **Demo controls**, then
 click **Start update**. For an outage, wait for **Needs attention**, click
 **Restore supplier**, then **Resume update**. Restoring availability does not
 resume processing by itself. **Reset demo** builds a fresh baseline before
 switching the visible catalogue and clearing previous demo records.
+
+The floating **Demo controls** panel stays available while scrolling. Every table
+has item numbers, exact page totals, search, status filters and sorting across all
+matching records. The separate **Full 10,000-record import** remains available
+for performance demonstrations. Existing local volumes keep their saved data;
+use **Reset demo** to load the smaller baseline.
 
 ```powershell
 go test ./...

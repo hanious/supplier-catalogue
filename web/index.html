@@ -12,165 +12,192 @@
   </head>
   <body>
     <a class="skip" href="#catalogue-panel">Skip to catalogue</a>
-    <main>
-      <header>
-        <div>
-          <p class="eyebrow">Shop operations · synthetic demo</p>
-          <h1>Supplier catalogue</h1>
-        </div>
-        <button id="start" class="primary">Start update</button>
-      </header>
-      <section class="receipt" aria-labelledby="update-heading">
-        <div class="status-line">
-          <h2 id="update-heading">Loading saved status…</h2>
-          <button id="resume" class="primary" hidden>Resume update</button>
-        </div>
-        <p id="message">Checking the latest saved catalogue.</p>
-        <label id="progress-label" for="progress">Records processed</label>
-        <progress id="progress" value="0" max="10000"></progress>
-        <dl class="counts">
-          <div>
-            <dt>Added</dt>
-            <dd id="added">0</dd>
-          </div>
-          <div>
-            <dt>Changed</dt>
-            <dd id="changed">0</dd>
-          </div>
-          <div>
-            <dt>Withdrawn</dt>
-            <dd id="withdrawn">0</dd>
-          </div>
-          <div>
-            <dt>Ignored</dt>
-            <dd id="ignored">0</dd>
-          </div>
-          <div>
-            <dt>Issues</dt>
-            <dd id="issue-count">0</dd>
-          </div>
-        </dl>
-      </section>
-      <p id="announcement" class="sr-only" role="status" aria-live="polite"></p>
-      <p id="error" class="error" role="alert" hidden></p>
-      <section class="records" aria-label="Saved catalogue and update records">
-        <div role="tablist" aria-label="Catalogue views">
-          <button
-            id="tab-catalogue"
-            role="tab"
-            aria-selected="true"
-            aria-controls="catalogue-panel"
-          >
-            Catalogue</button
-          ><button
-            id="tab-changes"
-            role="tab"
-            aria-selected="false"
-            aria-controls="catalogue-panel"
-            tabindex="-1"
-          >
-            Changes</button
-          ><button
-            id="tab-issues"
-            role="tab"
-            aria-selected="false"
-            aria-controls="catalogue-panel"
-            tabindex="-1"
-          >
-            Issues</button
-          ><button
-            id="tab-history"
-            role="tab"
-            aria-selected="false"
-            aria-controls="catalogue-panel"
-            tabindex="-1"
-          >
-            Update history
-          </button>
-        </div>
-        <div
-          id="catalogue-panel"
-          role="tabpanel"
-          aria-labelledby="tab-catalogue"
-          tabindex="0"
-        >
-          <form id="filters">
+    <div class="workspace">
+      <aside class="demo-panel" aria-label="Demo controls">
+        <details class="demo" id="demo-controls" open>
+          <summary>Demo controls</summary>
+          <div class="demo-body">
+            <p>
+              All products and supplier events are synthetic. No sign-in is
+              required. Public demo actions can be triggered by any visitor.
+            </p>
             <label
-              >Search this page<input
-                id="search"
-                type="search"
-                maxlength="80"
-                placeholder="Name or product ID" /></label
-            ><label
-              >Status<select id="filter-status">
-                <option value="">All products</option>
-                <option value="active">Active</option>
-                <option value="withdrawn">Withdrawn</option>
+              >Next scenario<select id="scenario">
+                <option value="normal">Normal update</option>
+                <option value="duplicates">Duplicate delivery</option>
+                <option value="out_of_order">Out-of-order delivery</option>
+                <option value="outage">Supplier outage</option>
+                <option value="invalid">Invalid records</option>
+                <option value="slow">Close browser / slow supplier</option>
+                <option value="full">Full 10,000-record import</option>
+                <option value="correction">Supplier correction</option>
               </select></label
-            ><button type="submit">Apply filters</button>
-          </form>
-          <p id="view-note" class="muted">
-            50 catalogue records per page. Filters apply to the current page.
-          </p>
-          <div class="table-scroll">
-            <table>
-              <caption id="table-caption" class="sr-only">
-                Saved catalogue
-              </caption>
-              <thead id="table-head"></thead>
-              <tbody id="table-body"></tbody>
-            </table>
+            >
+            <div class="primary-actions">
+              <button id="start" class="primary">Start update</button
+              ><button id="resume" class="primary" hidden>Resume update</button>
+            </div>
+            <div class="demo-actions">
+              <button id="refresh">Refresh saved status</button>
+              <button id="restore">Restore supplier</button
+              ><button id="publish">Publish next supplier update</button
+              ><button id="replay">Replay saved update</button
+              ><button id="reset" class="danger">Reset demo</button>
+            </div>
+            <p id="expected"></p>
+            <p id="observed">Observed: no update started.</p>
+            <p id="published" hidden></p>
+
+            <p class="muted">
+              Use Start update to import. Restore supplier changes availability
+              only. Reset loads a fresh 100-product baseline; it waits for
+              active processing to finish. To demonstrate an application
+              interruption, stop and restart the worker container.
+            </p>
           </div>
-          <p id="empty" class="muted" hidden>
-            No records on this page. Try the next page or change the filters.
-          </p>
-          <nav class="pagination" aria-label="Record pages">
-            <button id="previous" disabled>Previous page</button
-            ><span id="page-number">Page 1</span
-            ><button id="next" disabled>Next page</button>
-          </nav>
-        </div>
-      </section>
-      <div class="saved-line">
-        <span id="connection">Checking connection…</span
-        ><button id="refresh">Refresh saved status</button>
-      </div>
-      <details class="demo">
-        <summary>Demo controls</summary>
-        <div class="demo-body">
-          <p>
-            All products and supplier events are synthetic. No sign-in is
-            required. Public demo actions can be triggered by any visitor.
-          </p>
-          <label
-            >Next scenario<select id="scenario">
-              <option value="normal">Normal update</option>
-              <option value="duplicates">Duplicate delivery</option>
-              <option value="out_of_order">Out-of-order delivery</option>
-              <option value="outage">Supplier outage</option>
-              <option value="invalid">Invalid records</option>
-              <option value="slow">Close browser / slow supplier</option>
-              <option value="full">Full 10,000-record import</option>
-              <option value="correction">Supplier correction</option>
-            </select></label
+        </details>
+      </aside>
+      <main>
+        <header>
+          <div>
+            <p class="eyebrow">Shop operations · synthetic demo</p>
+            <h1>Supplier catalogue</h1>
+          </div>
+        </header>
+        <section class="receipt" aria-labelledby="update-heading">
+          <div class="status-line">
+            <h2 id="update-heading">Loading saved status…</h2>
+          </div>
+          <p id="message">Checking the latest saved catalogue.</p>
+          <label id="progress-label" for="progress">Records processed</label>
+          <progress id="progress" value="0" max="100"></progress>
+          <dl class="counts">
+            <div>
+              <dt>Added</dt>
+              <dd id="added">0</dd>
+            </div>
+            <div>
+              <dt>Changed</dt>
+              <dd id="changed">0</dd>
+            </div>
+            <div>
+              <dt>Withdrawn</dt>
+              <dd id="withdrawn">0</dd>
+            </div>
+            <div>
+              <dt>Ignored</dt>
+              <dd id="ignored">0</dd>
+            </div>
+            <div>
+              <dt>Issues</dt>
+              <dd id="issue-count">0</dd>
+            </div>
+          </dl>
+        </section>
+        <p
+          id="announcement"
+          class="sr-only"
+          role="status"
+          aria-live="polite"
+        ></p>
+        <p id="error" class="error" role="alert" hidden></p>
+        <section
+          class="records"
+          aria-label="Saved catalogue and update records"
+        >
+          <div role="tablist" aria-label="Catalogue views">
+            <button
+              id="tab-catalogue"
+              role="tab"
+              aria-selected="true"
+              aria-controls="catalogue-panel"
+            >
+              Catalogue</button
+            ><button
+              id="tab-changes"
+              role="tab"
+              aria-selected="false"
+              aria-controls="catalogue-panel"
+              tabindex="-1"
+            >
+              Changes</button
+            ><button
+              id="tab-issues"
+              role="tab"
+              aria-selected="false"
+              aria-controls="catalogue-panel"
+              tabindex="-1"
+            >
+              Issues</button
+            ><button
+              id="tab-history"
+              role="tab"
+              aria-selected="false"
+              aria-controls="catalogue-panel"
+              tabindex="-1"
+            >
+              Update history
+            </button>
+          </div>
+          <div
+            id="catalogue-panel"
+            role="tabpanel"
+            aria-labelledby="tab-catalogue"
+            tabindex="0"
           >
-          <p id="expected"></p>
-          <p id="observed">Observed: no update started.</p>
-          <p id="published" hidden></p>
-          <div class="demo-actions">
-            <button id="restore">Restore supplier</button
-            ><button id="publish">Publish next supplier update</button
-            ><button id="replay">Replay saved update</button
-            ><button id="reset" class="danger">Reset demo</button>
+            <form id="filters">
+              <label
+                >Search records<input
+                  id="search"
+                  type="search"
+                  maxlength="80"
+                  placeholder="Name or product ID" /></label
+              ><label
+                >Filter<select id="filter-status">
+                  <option value="">All products</option>
+                  <option value="active">Active</option>
+                  <option value="withdrawn">Withdrawn</option>
+                </select></label
+              ><label
+                >Sort by<select id="sort-by">
+                  <option value="id">Product ID</option>
+                  <option value="name">Product name</option>
+                  <option value="price">Price</option>
+                  <option value="status">Status</option>
+                </select></label
+              ><label
+                >Order<select id="sort-order">
+                  <option value="asc">Ascending</option>
+                  <option value="desc">Descending</option>
+                </select></label
+              ><button type="submit">Apply filters</button>
+            </form>
+            <p id="view-note" class="muted">
+              Search, filter and sort all saved records in this view.
+            </p>
+            <div class="table-scroll">
+              <table>
+                <caption id="table-caption" class="sr-only">
+                  Saved catalogue
+                </caption>
+                <thead id="table-head"></thead>
+                <tbody id="table-body"></tbody>
+              </table>
+            </div>
+            <p id="empty" class="muted" hidden>
+              No records match these filters.
+            </p>
+            <nav class="pagination" aria-label="Record pages">
+              <button id="previous" disabled>Previous page</button
+              ><span id="page-number">Page 1</span
+              ><button id="next" disabled>Next page</button>
+            </nav>
           </div>
-          <p class="muted">
-            Use Start update above to import. Restore supplier changes
-            availability only. Reset loads a fresh 10,000-product baseline; it
-            waits for active processing to finish. To demonstrate an application
-            interruption, stop and restart the worker container.
-          </p>
+        </section>
+        <div class="saved-line">
+          <span id="connection">Checking connection…</span>
         </div>
-      </details>
-    </main>
+      </main>
+    </div>
   </body>
 </html>
