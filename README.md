@@ -66,7 +66,8 @@ Node.js 24 is recommended for infrastructure tooling. After a separately approve
 CDK deployment, `scripts/publish-web.ps1` packages and publishes the static site
 using `dist/outputs.json`.
 
-Local design notes, the standalone mockup, walkthrough, deployment/teardown
-instructions, and verification evidence are under `docs/`. Those files are
-intentionally ignored and remain local. The staff interface has no sign-in;
-publicly hosted demo actions can be triggered by visitors. Use synthetic data only.
+Local documentation has three entry points: [codebase guide](docs/codebase.md),
+[scenarios and triggers](docs/scenarios.md), and [run/deployment reference](docs/operations.md).
+Those files are intentionally ignored and remain local. The staff interface has
+no sign-in; publicly hosted demo actions can be triggered by visitors. Use
+synthetic data only.
