@@ -2,6 +2,7 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const api = window.CATALOGUE_API || "";
+  const scenarioStorageKey = "supplier-catalogue.scenario";
   const state = {
     job: null,
     inspectedUpdate: null,
@@ -99,6 +100,21 @@
       order: "desc",
     },
   };
+  function updateScenarioHint() {
+    $("expected").textContent =
+      `Expected: ${expectations[$("scenario").value]}`;
+  }
+  function restoreScenarioChoice() {
+    let choice = "normal";
+    try {
+      const saved = localStorage.getItem(scenarioStorageKey);
+      if (Object.hasOwn(expectations, saved)) choice = saved;
+    } catch {
+      // Browser storage can be unavailable; demo controls must still work.
+    }
+    $("scenario").value = choice;
+    updateScenarioHint();
+  }
   function configureFilters() {
     const config = views[state.view];
     for (const [id, options] of [
@@ -232,8 +248,13 @@
         : "Latest saved catalogue · status checked just now";
       showError("");
       buttons();
-      if (changed) await loadView();
-      if (j?.status === "running") state.timer = setTimeout(status, 2000);
+      // Table loading must not hold the action lock after saved status is known.
+      if (changed) void loadView();
+      if (
+        j?.status === "running" ||
+        (state.cleanupPending && j?.status !== "interrupted")
+      )
+        state.timer = setTimeout(status, 2000);
     } catch (error) {
       $("connection").textContent =
         "Connection lost · showing the last saved view";
@@ -506,10 +527,13 @@
     await loadView();
   });
   $("scenario").addEventListener("change", () => {
-    $("expected").textContent =
-      `Expected: ${expectations[$("scenario").value]}`;
+    try {
+      localStorage.setItem(scenarioStorageKey, $("scenario").value);
+    } catch {
+      // Saving a preference is optional when storage is blocked or full.
+    }
+    updateScenarioHint();
   });
-  $("expected").textContent = `Expected: ${expectations.normal}`;
   $("filters").addEventListener("submit", (event) => {
     event.preventDefault();
     state.page = 1;
@@ -546,6 +570,8 @@
   window.addEventListener("pagehide", clearPoll);
   if (window.matchMedia("(max-width: 900px)").matches)
     $("demo-controls").open = false;
+  restoreScenarioChoice();
   configureFilters();
+  buttons();
   status();
 })();
