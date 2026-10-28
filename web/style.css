@@ -8,17 +8,19 @@
   --line: #ced9d2;
   --control-line: #71867e;
   --accent: #355f75;
-  --muted: #53655f;
+  --muted: #46594f;
   --focus: #80571a;
-  --row-positive: #eef5ee;
-  --row-neutral: #f0f1f2;
+  --row-positive: #cce5c6;
+  --row-neutral: #d5dbe1;
   --row-attention: #fff5df;
-  --positive-ink: #2d573e;
-  --positive-badge: #dcebdc;
-  --neutral-ink: #4c555a;
-  --neutral-badge: #e1e4e6;
+  --positive-ink: #224c32;
+  --positive-badge: #b9d5b5;
+  --neutral-ink: #354550;
+  --neutral-badge: #bdc7d0;
   --attention-ink: #765009;
   --attention-badge: #f6e4b4;
+  --warning-ink: #982b2b;
+  --warning-badge: #f8dedd;
 }
 * {
   box-sizing: border-box;
@@ -161,6 +163,20 @@ a:focus-visible {
   display: block;
   font-size: 13px;
   margin-bottom: 8px;
+}
+.receipt[data-state="interrupted"],
+.receipt[data-state="unavailable"] {
+  border-top-color: var(--warning-ink);
+}
+.receipt[data-state="interrupted"] #update-heading,
+.receipt[data-state="interrupted"] #message,
+.receipt[data-state="unavailable"] #update-heading,
+.receipt[data-state="unavailable"] #message {
+  color: var(--warning-ink);
+}
+.receipt[data-state="interrupted"] #message,
+.receipt[data-state="unavailable"] #message {
+  font-weight: 600;
 }
 progress {
   width: 100%;
@@ -338,6 +354,11 @@ tbody tr:hover {
 .pill[data-tone="attention"] {
   color: var(--attention-ink);
   background: var(--attention-badge);
+}
+.pill[data-tone="warning"] {
+  color: var(--warning-ink);
+  background: var(--warning-badge);
+  font-weight: 600;
 }
 .issue-action {
   display: grid;

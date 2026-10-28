@@ -200,6 +200,7 @@
       state.cleanupPending = data.cleanup_pending;
       state.baselineReady = data.baseline_ready;
       const j = state.job;
+      document.querySelector(".receipt").dataset.state = j?.status || "";
       $("update-heading").textContent = j
         ? `${j.id.slice(0, 13)} · ${labels[j.status] || j.status}`
         : "Ready for an update";
@@ -209,6 +210,8 @@
         : data.baseline_ready
           ? "100-product baseline loaded. Choose a scenario, then start an update."
           : "Use Reset demo to load the 100-product baseline before starting a scenario.";
+      if (j?.status === "interrupted")
+        $("message").textContent = `Update paused. ${$("message").textContent}`;
       $("progress").max = j?.total || 100;
       $("progress").value = j?.processed || 0;
       $("progress-label").textContent = j
@@ -436,15 +439,15 @@
           cell(
             pill(
               labels[item.status] || item.status,
-              ["interrupted", "finished_with_issues", "unavailable"].includes(
-                item.status,
-              )
-                ? "attention"
-                : item.status === "completed"
-                  ? "positive"
-                  : item.status === "abandoned"
-                    ? "neutral"
-                    : "info",
+              ["interrupted", "unavailable"].includes(item.status)
+                ? "warning"
+                : item.status === "finished_with_issues"
+                  ? "attention"
+                  : item.status === "completed"
+                    ? "positive"
+                    : item.status === "abandoned"
+                      ? "neutral"
+                      : "info",
             ),
           ),
           cell(`${item.processed} / ${item.total}`),
