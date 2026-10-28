@@ -31,3 +31,20 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Application dependencies and generated output
+node_modules/
+dist/
+output/
+infra/cdk.out/
+.env*
+!.env.example
+.playwright-cli/
+
+# Local agent guidance, skills, and generated documentation
+AGENT.md
+CLAUDE.md
+.agents/
+.codex/
+skills-lock.json
+docs/

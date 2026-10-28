@@ -1,0 +1,12 @@
+.git
+.agents
+.codex
+node_modules
+infra/node_modules
+infra/cdk.out
+output
+dist
+.env
+.env.*
+!.env.example
+docs
