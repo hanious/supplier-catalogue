@@ -1,0 +1,87 @@
+name: supplier-catalogue
+
+x-environment: &environment
+  AWS_REGION: ${AWS_REGION:-us-east-1}
+  MODE: api
+  AWS_ACCESS_KEY_ID: local
+  AWS_SECRET_ACCESS_KEY: local
+  DYNAMODB_ENDPOINT: http://dynamodb:8000
+  TABLE_NAME: ${TABLE_NAME:-supplier-catalogue-local}
+  SUPPLIER_URL: http://supplier:8081
+  HTTP_ADDR: :8080
+  ALLOWED_ORIGIN: http://localhost:55801
+  QUEUE_URL: ""
+  RECORD_INTERVAL_MS: ${RECORD_INTERVAL_MS:-0}
+  RECORDS_PER_SLICE: ${RECORDS_PER_SLICE:-0}
+  LEASE_SECONDS: 20
+  WORK_SLICE_SECONDS: 10
+
+services:
+  dynamodb:
+    image: amazon/dynamodb-local:3.1.0
+    command: -jar DynamoDBLocal.jar -sharedDb -dbPath /home/dynamodblocal/data
+    user: root
+    volumes:
+      - catalogue-data:/home/dynamodblocal/data
+    healthcheck:
+      test: [CMD-SHELL, "curl -s -o /dev/null http://localhost:8000"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  init:
+    build: .
+    command: init
+    environment: *environment
+    depends_on:
+      dynamodb:
+        condition: service_healthy
+  supplier:
+    build: .
+    command: supplier
+    environment:
+      <<: *environment
+      HTTP_ADDR: :8081
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://localhost:8081/health]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+  api:
+    build: .
+    command: api
+    environment: *environment
+    ports:
+      - "127.0.0.1:55801:8080"
+    depends_on:
+      supplier:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://localhost:8080/health]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+  worker:
+    build: .
+    command: worker
+    environment: *environment
+    depends_on:
+      supplier:
+        condition: service_healthy
+    restart: unless-stopped
+  test:
+    profiles: [tools]
+    build:
+      context: .
+      target: test
+    environment:
+      <<: *environment
+      INTEGRATION_DYNAMODB_ENDPOINT: http://dynamodb:8000
+    depends_on:
+      dynamodb:
+        condition: service_healthy
+
+volumes:
+  catalogue-data:
