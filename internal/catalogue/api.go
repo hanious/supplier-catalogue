@@ -4,21 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
-	"sort"
-	"strconv"
 	"strings"
 )
 
 // API serves staff operations; wakeups never replace durable job state.
 type API struct {
-	Store  *Store
-	Origin string
-	Wake   func(context.Context) error
-	Static http.Handler
+	Store         *Store
+	Origin        string
+	Wake          func(context.Context) error
+	Static        http.Handler
+	catalogueView catalogueCache
+	changeView    changeCache
 }
 
 // productView excludes supplier metadata so its representation changes only
@@ -123,7 +122,7 @@ func (a *API) status(w http.ResponseWriter, r *http.Request) {
 		}
 		job = &j
 	}
-	writeJSON(w, 200, map[string]any{"job": job, "generation": c.Generation, "epoch": c.Epoch, "latest": c.Latest, "scenarios": Scenarios(), "baseline_ready": c.Current != "", "cleanup_pending": len(c.Retired) > 0})
+	writeJSON(w, 200, map[string]any{"job": job, "generation": c.Generation, "data_revision": c.DataRevision, "epoch": c.Epoch, "latest": c.Latest, "scenarios": Scenarios(), "baseline_ready": c.Current != "", "cleanup_pending": len(c.Retired) > 0, "baseline_count": DemoProductCount})
 }
 
 type startRequest struct {
@@ -233,183 +232,6 @@ func (a *API) reset(w http.ResponseWriter, r *http.Request) {
 	}
 	a.notify(r.Context())
 	writeJSON(w, 202, j)
-}
-
-func pagination(r *http.Request) (string, int, error) {
-	cursor := r.URL.Query().Get("cursor")
-	if len(cursor) > 180 {
-		return "", 0, invalid("invalid cursor")
-	}
-	limit := 50
-	if raw := r.URL.Query().Get("limit"); raw != "" {
-		n, err := strconv.Atoi(raw)
-		if err != nil || n < 1 || n > 100 {
-			return "", 0, invalid("invalid limit")
-		}
-		limit = n
-	}
-	return cursor, limit, nil
-}
-
-func (a *API) products(w http.ResponseWriter, r *http.Request) {
-	cursor, limit, err := pagination(r)
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	search := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
-	filter := r.URL.Query().Get("status")
-	if len(search) > 80 || (filter != "" && filter != "active" && filter != "withdrawn") {
-		a.fail(w, invalid("invalid product filter"))
-		return
-	}
-	c, err := a.Store.Control(r.Context())
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	etag := `"` + digest(fmt.Sprintf("%s/%d/%s/%d/%s/%s", c.Epoch, c.Generation, cursor, limit, search, filter)) + `"`
-	w.Header().Set("Cache-Control", "private, no-cache")
-	w.Header().Set("ETag", etag)
-	if r.Header.Get("If-None-Match") == etag {
-		w.WriteHeader(304)
-		return
-	}
-	// At most one bounded key page is examined. Filters may return an empty page
-	// with a continuation; the UI offers the next page rather than scanning 10k rows.
-	rows, next, err := a.Store.Rows(r.Context(), c.Epoch+"|PRODUCTS", cursor, limit, false)
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	products := make([]productView, 0, len(rows))
-	for _, row := range rows {
-		var p Product
-		if err = json.Unmarshal([]byte(row.Data), &p); err != nil {
-			a.fail(w, err)
-			return
-		}
-		if search != "" && !strings.Contains(strings.ToLower(p.Name+" "+p.ID), search) {
-			continue
-		}
-		if filter == "active" && !p.Active || filter == "withdrawn" && p.Active {
-			continue
-		}
-		products = append(products, productView{ID: p.ID, Name: p.Name, Price: p.Price, Active: p.Active})
-	}
-	writeJSON(w, 200, map[string]any{"items": products, "next_cursor": next, "generation": c.Generation})
-}
-
-func (a *API) history(w http.ResponseWriter, r *http.Request) {
-	cursor, limit, err := pagination(r)
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	c, err := a.Store.Control(r.Context())
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	// Publications are bounded to 50 per epoch. Include the retiring epoch in
-	// this bounded key query, then page the current epoch in actual time order.
-	rows, _, err := a.Store.Rows(r.Context(), "JOBS", "", 200, false)
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	jobs := make([]Job, 0, len(rows))
-	for _, row := range rows {
-		var j Job
-		if err = json.Unmarshal([]byte(row.Data), &j); err != nil {
-			a.fail(w, err)
-			return
-		}
-		if j.Epoch == c.Epoch || j.ID == c.Current {
-			jobs = append(jobs, j)
-		}
-	}
-	sort.Slice(jobs, func(i, j int) bool { return jobs[i].CreatedAt > jobs[j].CreatedAt })
-	start := 0
-	if cursor != "" {
-		found := false
-		for i, j := range jobs {
-			if j.ID == cursor {
-				start = i + 1
-				found = true
-				break
-			}
-		}
-		if !found {
-			a.fail(w, invalid("history cursor is no longer retained"))
-			return
-		}
-	}
-	end := min(start+limit, len(jobs))
-	next := ""
-	if end < len(jobs) {
-		next = jobs[end-1].ID
-	}
-	jobs = jobs[start:end]
-	writeJSON(w, 200, map[string]any{"items": jobs, "next_cursor": next})
-}
-
-func (a *API) changes(w http.ResponseWriter, r *http.Request) {
-	id := r.URL.Query().Get("update_id")
-	if !ValidID(id) {
-		a.fail(w, invalid("invalid update ID"))
-		return
-	}
-	j, err := a.Store.Job(r.Context(), id)
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	a.results(w, r, j.Epoch+"|RESULTS|"+id, false)
-}
-
-func (a *API) issues(w http.ResponseWriter, r *http.Request) {
-	c, err := a.Store.Control(r.Context())
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	a.results(w, r, c.Epoch+"|ISSUES", true)
-}
-
-func (a *API) results(w http.ResponseWriter, r *http.Request, pk string, issues bool) {
-	cursor, limit, err := pagination(r)
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	rows, next, err := a.Store.Rows(r.Context(), pk, cursor, limit, false)
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	results := make([]Result, 0, len(rows))
-	for _, row := range rows {
-		var result Result
-		if err = json.Unmarshal([]byte(row.Data), &result); err != nil {
-			a.fail(w, err)
-			return
-		}
-		if !issues && (result.Kind == "ignored" || result.Kind == "issue") {
-			continue
-		}
-		if issues && ValidID(result.After.ID) {
-			epoch := strings.SplitN(pk, "|", 2)[0]
-			p, e := a.Store.Product(r.Context(), epoch, result.After.ID)
-			if e != nil {
-				a.fail(w, e)
-				return
-			}
-			result.Resolved = p != nil && p.Version > result.After.Version
-		}
-		results = append(results, result)
-	}
-	writeJSON(w, 200, map[string]any{"items": results, "next_cursor": next})
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

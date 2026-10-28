@@ -102,9 +102,12 @@ func run() error {
 			return nil
 		}
 		for ctx.Err() == nil {
-			_, err := worker.Tick(ctx)
+			more, err := worker.Tick(ctx)
 			if err != nil && !errors.Is(err, context.Canceled) {
 				slog.Warn("worker will recover from durable progress", "error", err)
+			}
+			if err == nil && more {
+				continue
 			}
 			select {
 			case <-ctx.Done():

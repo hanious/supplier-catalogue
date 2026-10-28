@@ -16,15 +16,16 @@ import (
 
 // Control serializes supplier starts, reset publication, and cache generations.
 type Control struct {
-	Epoch      string   `json:"epoch"`
-	Active     string   `json:"active"`
-	Current    string   `json:"current"`
-	Latest     string   `json:"latest"`
-	Sequence   int64    `json:"sequence"`
-	Generation int64    `json:"generation"`
-	Revision   int64    `json:"-"`
-	ResetFrom  string   `json:"reset_from,omitempty"`
-	Retired    []string `json:"retired,omitempty"`
+	Epoch        string   `json:"epoch"`
+	Active       string   `json:"active"`
+	Current      string   `json:"current"`
+	Latest       string   `json:"latest"`
+	Sequence     int64    `json:"sequence"`
+	Generation   int64    `json:"generation"`
+	DataRevision int64    `json:"data_revision"`
+	Revision     int64    `json:"-"`
+	ResetFrom    string   `json:"reset_from,omitempty"`
+	Retired      []string `json:"retired,omitempty"`
 }
 
 // Store uses DynamoDB transactions as the persistence boundary, locally and in AWS.
@@ -189,7 +190,7 @@ func (s *Store) Start(ctx context.Context, scenario, requestID, updateID string)
 			return Job{}, err
 		}
 		if c.Current == "" && scenario != "baseline" {
-			return Job{}, invalid("load the 10000-product baseline with Reset demo first")
+			return Job{}, invalid("load the demo baseline with Reset demo first")
 		}
 		if scenario == "baseline" && len(c.Retired) > 0 {
 			return Job{}, fmt.Errorf("%w: previous demo cleanup is still running", ErrConflict)
@@ -428,9 +429,31 @@ func (s *Store) Commit(ctx context.Context, j *Job, record Record) error {
 			return e
 		}
 		writes = append(writes, types.TransactWriteItem{Put: &types.Put{TableName: aws.String(s.Table), Item: attrs}})
+		if j.Epoch == c.Epoch {
+			c.DataRevision++
+			feed, e := s.put(j.Epoch+"|FEED", position(c.DataRevision), r.After, 0)
+			if e != nil {
+				return e
+			}
+			writes = append(writes, feed)
+		}
 		if r.Kind != "ignored" && j.Epoch == c.Epoch {
 			c.Generation++
 		}
+	}
+	if r.Kind != "issue" && r.Kind != "ignored" {
+		next.LastChange = next.Processed
+		// An ordered read projection keeps sparse change pages and totals exact.
+		change, e := s.put(j.Epoch+"|CHANGES|"+j.ID, position(int64(next.Processed)), r, 0)
+		if e != nil {
+			return e
+		}
+		writes = append(writes, change)
+		jw, e = s.fencedJob(next)
+		if e != nil {
+			return e
+		}
+		writes[0] = jw
 	}
 	if r.Kind == "issue" {
 		iw, e := s.put(j.Epoch+"|ISSUES", j.ID+"|"+record.SourceID, r, 0)
@@ -485,6 +508,7 @@ func (s *Store) Checkpoint(ctx context.Context, j *Job, page Page) error {
 		if j.Scenario == "baseline" {
 			c.Retired = append(c.Retired, c.Epoch)
 			c.Epoch = j.Epoch
+			c.DataRevision = 0
 			c.Sequence = 0
 			c.Generation++
 			c.ResetFrom = ""
@@ -609,9 +633,9 @@ func (s *Store) SeedLocal(ctx context.Context) error {
 	if c.Current != "" {
 		return nil
 	}
-	for start := 1; start <= 10000; start += 25 {
+	for start := 1; start <= DemoProductCount; start += 25 {
 		requests := make([]types.WriteRequest, 0, 25)
-		for i := start; i < start+25; i++ {
+		for i := start; i < min(start+25, DemoProductCount+1); i++ {
 			p := BaselineProduct(i)
 			attrs, e := encode(c.Epoch+"|PRODUCTS", p.ID, p, 1)
 			if e != nil {
@@ -652,7 +676,7 @@ func (s *Store) Cleanup(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 	epoch := c.Retired[0]
-	for _, pk := range []string{epoch + "|PRODUCTS", epoch + "|ISSUES"} {
+	for _, pk := range []string{epoch + "|PRODUCTS", epoch + "|ISSUES", epoch + "|FEED"} {
 		rows, _, e := s.Rows(ctx, pk, "", 25, false)
 		if e != nil {
 			return true, e
@@ -673,12 +697,14 @@ func (s *Store) Cleanup(ctx context.Context) (bool, error) {
 		if j.Epoch != epoch {
 			continue
 		}
-		results, _, e := s.Rows(ctx, epoch+"|RESULTS|"+j.ID, "", 25, false)
-		if e != nil {
-			return true, e
-		}
-		if len(results) > 0 {
-			return true, s.deleteRows(ctx, results)
+		for _, pk := range []string{epoch + "|RESULTS|" + j.ID, epoch + "|CHANGES|" + j.ID} {
+			results, _, e := s.Rows(ctx, pk, "", 25, false)
+			if e != nil {
+				return true, e
+			}
+			if len(results) > 0 {
+				return true, s.deleteRows(ctx, results)
+			}
 		}
 		return true, s.deleteRows(ctx, []item{row, {PK: "UPDATES", SK: j.ID}})
 	}

@@ -38,8 +38,7 @@ func integrationStore(t *testing.T) *Store {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// These tests need only the first 100 baseline products. The full 10,000
-	// baseline and import are exercised by the actual Compose walkthrough.
+	// Match the small baseline; the full import is also exercised in Compose.
 	for i := 1; i <= 100; i++ {
 		p := BaselineProduct(i)
 		attrs, e := encode(c.Epoch+"|PRODUCTS", p.ID, p, 1)
@@ -179,6 +178,10 @@ func TestIntegrationCrashWindowsRecoverDurableOutcomes(t *testing.T) {
 			done := finish(t, restarted, j.ID)
 			if done.Processed != 35 || done.Counts != (Counts{Added: 10, Changed: 20, Withdrawn: 5}) {
 				t.Fatalf("recovery inflated or lost outcomes: %+v", done)
+			}
+			changes := viewResponse(t, (&API{Store: s}).Handler(), "/api/changes?update_id="+done.ID)
+			if changes.Total != 35 {
+				t.Fatalf("crash lost change projection: %+v", changes)
 			}
 		})
 	}
@@ -632,8 +635,8 @@ func TestIntegrationHistoryPagesUseSavedChronology(t *testing.T) {
 	finish(t, w, second.ID)
 	api := (&API{Store: s}).Handler()
 	get := func(path string) struct {
-		Items []Job  `json:"items"`
-		Next  string `json:"next_cursor"`
+		Items []Job `json:"items"`
+		Pages int   `json:"total_pages"`
 	} {
 		t.Helper()
 		rec := httptest.NewRecorder()
@@ -642,8 +645,8 @@ func TestIntegrationHistoryPagesUseSavedChronology(t *testing.T) {
 			t.Fatalf("history = %d: %s", rec.Code, rec.Body.String())
 		}
 		var response struct {
-			Items []Job  `json:"items"`
-			Next  string `json:"next_cursor"`
+			Items []Job `json:"items"`
+			Pages int   `json:"total_pages"`
 		}
 		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 			t.Fatal(err)
@@ -651,11 +654,11 @@ func TestIntegrationHistoryPagesUseSavedChronology(t *testing.T) {
 		return response
 	}
 	newest := get("/api/history?limit=1")
-	if len(newest.Items) != 1 || newest.Items[0].ID != second.ID || newest.Next == "" {
+	if len(newest.Items) != 1 || newest.Items[0].ID != second.ID || newest.Pages != 2 {
 		t.Fatalf("newest history = %+v", newest)
 	}
-	older := get("/api/history?limit=1&cursor=" + newest.Next)
-	if len(older.Items) != 1 || older.Items[0].ID != first.ID || older.Next != "" {
+	older := get("/api/history?limit=1&page=2")
+	if len(older.Items) != 1 || older.Items[0].ID != first.ID || older.Pages != 2 {
 		t.Fatalf("older history = %+v", older)
 	}
 }

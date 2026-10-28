@@ -53,6 +53,7 @@ type Job struct {
 	Cursor      int    `json:"cursor"`
 	Offset      int    `json:"offset"`
 	Processed   int    `json:"processed"`
+	LastChange  int    `json:"last_change"`
 	Total       int    `json:"total"`
 	Counts      Counts `json:"counts"`
 	Token       string `json:"-"`

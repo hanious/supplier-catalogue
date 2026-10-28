@@ -33,6 +33,7 @@ test("deployment bounds capacity, keeps state, and wires durable recovery", () =
     Runtime: "provided.al2023",
     Architectures: ["arm64"],
   });
+  template.hasResourceProperties("AWS::Lambda::Function", {Environment: {Variables: Match.objectLike({MODE:"worker",RECORDS_PER_SLICE:"2"})}});
   template.hasResourceProperties("AWS::Lambda::EventSourceMapping", {
     BatchSize: 1,
     FunctionResponseTypes: ["ReportBatchItemFailures"],

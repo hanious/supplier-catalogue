@@ -2,6 +2,9 @@ package catalogue
 
 import "fmt"
 
+// DemoProductCount keeps ordinary scenarios small enough to inspect by hand.
+const DemoProductCount = 100
+
 // Scenarios lists the fixed synthetic supplier behaviours available to staff.
 func Scenarios() []string {
 	return []string{"normal", "duplicates", "out_of_order", "outage", "invalid", "slow", "full", "correction"}
@@ -18,9 +21,14 @@ func NewManifest(id, scenario string, sequence int64) (Manifest, error) {
 	}
 	m := Manifest{ID: id, Scenario: scenario, Sequence: sequence, Total: 35, Pages: 1}
 	switch scenario {
-	case "baseline", "full", "slow", "outage":
+	case "full":
 		m.Total = 10000
 		m.Pages = 100
+	case "baseline":
+		m.Total = DemoProductCount
+	case "slow", "outage":
+		m.Total = DemoProductCount
+		m.Pages = 10
 	case "duplicates":
 		m.Total = 70
 		m.Pages = 3
@@ -34,7 +42,7 @@ func NewManifest(id, scenario string, sequence int64) (Manifest, error) {
 	return m, nil
 }
 
-// BaselineProduct generates a deterministic catalogue of 10,000 synthetic products.
+// BaselineProduct generates deterministic synthetic products for every fixture.
 func BaselineProduct(i int) Product {
 	names := []string{"Canvas tote", "Ceramic mug", "Desk lamp", "Linen notebook", "Oak tray"}
 	return Product{ID: fmt.Sprintf("P%05d", i), Name: fmt.Sprintf("%s %05d", names[(i-1)%len(names)], i), Price: int64(500 + i%9500), Active: true, Version: 1}
@@ -64,7 +72,8 @@ func FixturePage(m Manifest, cursor int) (Page, error) {
 	p := Page{UpdateID: m.ID, Cursor: cursor, Next: cursor + 1, Total: m.Total, End: cursor == m.Pages-1, Records: []Record{}}
 	switch m.Scenario {
 	case "baseline", "full", "slow", "outage":
-		for i := cursor*100 + 1; i <= (cursor+1)*100; i++ {
+		batchSize := (m.Total + m.Pages - 1) / m.Pages
+		for i := cursor*batchSize + 1; i <= min((cursor+1)*batchSize, m.Total); i++ {
 			product := BaselineProduct(i)
 			if m.Scenario != "baseline" {
 				product.Version = m.Sequence*10 + 2

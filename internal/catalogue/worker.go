@@ -193,7 +193,7 @@ func SupplierHandler(store *Store) http.Handler {
 			return
 		}
 		if m.Scenario == "slow" {
-			if err = wait(r.Context(), 150*time.Millisecond); err != nil {
+			if err = wait(r.Context(), time.Second); err != nil {
 				return
 			}
 		}

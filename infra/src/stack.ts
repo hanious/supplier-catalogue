@@ -134,7 +134,7 @@ export class ServiceStack extends Stack {
       ALLOWED_ORIGIN: frontendOrigin,
       QUEUE_URL: queue.queueUrl,
       RECORD_INTERVAL_MS: "0",
-      RECORDS_PER_SLICE: "4",
+      RECORDS_PER_SLICE: "2",
       LEASE_SECONDS: "45",
       WORK_SLICE_SECONDS: "15",
     };
