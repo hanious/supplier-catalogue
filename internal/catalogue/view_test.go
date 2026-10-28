@@ -44,15 +44,31 @@ func TestIntegrationGlobalSortFiltersAndExactPageTotals(t *testing.T) {
 	if err := json.Unmarshal(first.Items[0], &product); err != nil {
 		t.Fatal(err)
 	}
-	if product.ID != "P00100" {
-		t.Fatalf("global price sort starts at %s", product.ID)
+	if product.ID != "P00027" || product.Price != 999 {
+		t.Fatalf("products(price descending) first = %+v, want P00027 at 999 cents", product)
 	}
 	last := viewResponse(t, api, "/api/products?limit=25&page=4&sort=price&order=desc")
 	if err := json.Unmarshal(last.Items[24], &product); err != nil {
 		t.Fatal(err)
 	}
-	if product.ID != "P00001" {
-		t.Fatalf("last sorted record = %s", product.ID)
+	if product.ID != "P00095" || product.Price != 515 {
+		t.Fatalf("products(price descending) last = %+v, want P00095 at 515 cents", product)
+	}
+	for _, tt := range []struct {
+		query  string
+		wantID string
+	}{
+		{query: "", wantID: "P00001"},
+		{query: "?sort=id&order=desc", wantID: "P00100"},
+		{query: "?sort=price&order=asc", wantID: "P00095"},
+	} {
+		result := viewResponse(t, api, "/api/products"+tt.query)
+		if err := json.Unmarshal(result.Items[0], &product); err != nil {
+			t.Fatal(err)
+		}
+		if product.ID != tt.wantID {
+			t.Errorf("products(%q) first ID = %q, want %q", tt.query, product.ID, tt.wantID)
+		}
 	}
 	search := viewResponse(t, api, "/api/products?q=P00100")
 	if search.Total != 1 || search.Pages != 1 {

@@ -45,7 +45,9 @@ func NewManifest(id, scenario string, sequence int64) (Manifest, error) {
 // BaselineProduct generates deterministic synthetic products for every fixture.
 func BaselineProduct(i int) Product {
 	names := []string{"Canvas tote", "Ceramic mug", "Desk lamp", "Linen notebook", "Oak tray"}
-	return Product{ID: fmt.Sprintf("P%05d", i), Name: fmt.Sprintf("%s %05d", names[(i-1)%len(names)], i), Price: int64(500 + i%9500), Active: true, Version: 1}
+	// Mix prices independently of ID order while keeping every fixture repeatable.
+	price := int64(500 + (i*37)%500)
+	return Product{ID: fmt.Sprintf("P%05d", i), Name: fmt.Sprintf("%s %05d", names[(i-1)%len(names)], i), Price: price, Active: true, Version: 1}
 }
 
 func normalRecord(m Manifest, i int) Record {
