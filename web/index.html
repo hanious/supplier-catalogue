@@ -66,9 +66,30 @@
         </header>
         <section class="receipt" aria-labelledby="update-heading">
           <div class="status-line">
-            <h2 id="update-heading">Loading saved status…</h2>
+            <h2 id="update-heading">
+              <span
+                id="update-warning-icon"
+                class="warning-icon"
+                aria-hidden="true"
+                hidden
+              >
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M12 3 2 21h20L12 3Z" />
+                  <path d="M12 9v5m0 3v1" />
+                </svg>
+              </span>
+              <span id="update-title">Loading saved status…</span>
+            </h2>
           </div>
           <p id="message">Checking the latest saved catalogue.</p>
+          <p id="issue-warning" hidden></p>
           <label id="progress-label" for="progress">Records processed</label>
           <progress id="progress" value="0" max="100"></progress>
           <dl class="counts">
@@ -116,19 +137,35 @@
             ><button
               id="tab-changes"
               role="tab"
+              aria-label="Changes"
               aria-selected="false"
               aria-controls="catalogue-panel"
               tabindex="-1"
+              aria-describedby="notice-changes"
             >
-              Changes</button
+              Changes<span
+                id="badge-changes"
+                class="tab-badge"
+                aria-hidden="true"
+                hidden
+              ></span>
+              <span id="notice-changes" class="sr-only"></span></button
             ><button
               id="tab-issues"
               role="tab"
+              aria-label="Issues"
               aria-selected="false"
               aria-controls="catalogue-panel"
               tabindex="-1"
+              aria-describedby="notice-issues"
             >
-              Issues</button
+              Issues<span
+                id="badge-issues"
+                class="tab-badge"
+                aria-hidden="true"
+                hidden
+              ></span>
+              <span id="notice-issues" class="sr-only"></span></button
             ><button
               id="tab-history"
               role="tab"

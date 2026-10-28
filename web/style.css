@@ -153,6 +153,23 @@ a:focus-visible {
   align-items: center;
   gap: 12px;
 }
+#update-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.warning-icon {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+#issue-warning {
+  color: var(--warning-ink);
+  font-weight: 600;
+  line-height: 1.6;
+  margin: 0 0 16px;
+}
 #message {
   color: var(--muted);
   line-height: 1.6;
@@ -164,24 +181,40 @@ a:focus-visible {
   font-size: 13px;
   margin-bottom: 8px;
 }
-.receipt[data-state="interrupted"],
-.receipt[data-state="unavailable"] {
+.receipt[data-attention="true"] {
+  --progress-color: var(--warning-ink);
   border-top-color: var(--warning-ink);
 }
-.receipt[data-state="interrupted"] #update-heading,
-.receipt[data-state="interrupted"] #message,
-.receipt[data-state="unavailable"] #update-heading,
-.receipt[data-state="unavailable"] #message {
+.receipt[data-attention="true"] #update-heading,
+.receipt[data-attention="true"] #message,
+.receipt[data-attention="true"] #progress-label {
   color: var(--warning-ink);
 }
-.receipt[data-state="interrupted"] #message,
-.receipt[data-state="unavailable"] #message {
+.receipt[data-attention="true"] #message {
   font-weight: 600;
 }
 progress {
   width: 100%;
   height: 10px;
-  accent-color: var(--accent);
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #e4eae6;
+  color: var(--progress-color, var(--accent));
+  accent-color: var(--progress-color, var(--accent));
+}
+progress::-webkit-progress-bar {
+  background: #e4eae6;
+  border-radius: 999px;
+}
+progress::-webkit-progress-value {
+  background: var(--progress-color, var(--accent));
+  border-radius: 999px;
+}
+progress::-moz-progress-bar {
+  background: var(--progress-color, var(--accent));
+  border-radius: 999px;
 }
 .counts {
   display: grid;
@@ -223,6 +256,23 @@ dd {
   color: var(--accent);
   background: #e8eff3;
   border-bottom-color: var(--accent);
+}
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--warning-ink);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  vertical-align: middle;
 }
 [role="tabpanel"] {
   padding: 18px 24px 8px;

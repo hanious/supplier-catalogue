@@ -3,6 +3,7 @@
   const $ = (id) => document.getElementById(id);
   const api = window.CATALOGUE_API || "";
   const scenarioStorageKey = "supplier-catalogue.scenario";
+  const attentionStorageKey = "supplier-catalogue.attention";
   const state = {
     job: null,
     inspectedUpdate: null,
@@ -20,6 +21,7 @@
     pending: null,
     cache: new Map(),
     viewSequence: 0,
+    attention: { scope: "", seen: { changes: 0, issues: 0 } },
   };
   const labels = {
     running: "Updating",
@@ -114,6 +116,62 @@
     }
     $("scenario").value = choice;
     updateScenarioHint();
+  }
+  function updateAttention() {
+    const j = state.job;
+    const scope =
+      j && j.scenario !== "baseline" ? `${state.epoch}/${j.id}` : "";
+    const totals = {
+      changes: j ? j.counts.added + j.counts.changed + j.counts.withdrawn : 0,
+      issues: j?.counts.issues || 0,
+    };
+    if (state.attention.scope !== scope) {
+      const seen = { changes: 0, issues: 0 };
+      try {
+        const saved = JSON.parse(localStorage.getItem(attentionStorageKey));
+        if (saved?.scope === scope) {
+          for (const view of Object.keys(seen)) {
+            const count = saved.seen?.[view];
+            if (Number.isSafeInteger(count) && count >= 0 && count <= 10000)
+              seen[view] = count;
+          }
+        }
+      } catch {
+        // Invalid or unavailable browser storage cannot block notifications.
+      }
+      state.attention = { scope, seen };
+    }
+    let acknowledged = false;
+    for (const view of ["changes", "issues"]) {
+      const currentView =
+        state.view === view &&
+        (view !== "changes" ||
+          !state.inspectedUpdate ||
+          state.inspectedUpdate === j?.id);
+      if (scope && currentView && totals[view] > state.attention.seen[view]) {
+        state.attention.seen[view] = totals[view];
+        acknowledged = true;
+      }
+      const unread = scope
+        ? Math.max(0, totals[view] - state.attention.seen[view])
+        : 0;
+      const badge = $(`badge-${view}`);
+      badge.hidden = unread === 0;
+      badge.textContent = unread.toLocaleString();
+      const notice = `${unread.toLocaleString()} new ${unread === 1 ? view.slice(0, -1) : view} since last opened`;
+      badge.title = notice;
+      $(`notice-${view}`).textContent = unread ? notice : "";
+    }
+    if (acknowledged) {
+      try {
+        localStorage.setItem(
+          attentionStorageKey,
+          JSON.stringify(state.attention),
+        );
+      } catch {
+        // Viewed counts still work for this page when persistence is unavailable.
+      }
+    }
   }
   function configureFilters() {
     const config = views[state.view];
@@ -216,8 +274,17 @@
       state.cleanupPending = data.cleanup_pending;
       state.baselineReady = data.baseline_ready;
       const j = state.job;
-      document.querySelector(".receipt").dataset.state = j?.status || "";
-      $("update-heading").textContent = j
+      const hasIssues = (j?.counts.issues || 0) > 0;
+      const needsAttention =
+        hasIssues ||
+        ["interrupted", "unavailable", "finished_with_issues"].includes(
+          j?.status,
+        );
+      const receipt = document.querySelector(".receipt");
+      receipt.dataset.state = j?.status || "";
+      receipt.dataset.attention = String(needsAttention);
+      $("update-warning-icon").hidden = !needsAttention;
+      $("update-title").textContent = j
         ? `${j.id.slice(0, 13)} · ${labels[j.status] || j.status}`
         : "Ready for an update";
       $("message").textContent = j
@@ -228,6 +295,12 @@
           : "Use Reset demo to load the 100-product baseline before starting a scenario.";
       if (j?.status === "interrupted")
         $("message").textContent = `Update paused. ${$("message").textContent}`;
+      const issueMessage = hasIssues
+        ? `${j.counts.issues.toLocaleString()} ${j.counts.issues === 1 ? "record needs" : "records need"} correction. Open the Issues tab for details.`
+        : "";
+      $("issue-warning").textContent = issueMessage;
+      $("issue-warning").hidden = !hasIssues;
+      updateAttention();
       $("progress").max = j?.total || 100;
       $("progress").value = j?.processed || 0;
       $("progress-label").textContent = j
@@ -239,9 +312,13 @@
       if (j)
         $("observed").textContent =
           `Observed: ${j.counts.added} added, ${j.counts.changed} changed, ${j.counts.withdrawn} withdrawn, ${j.counts.ignored} ignored, ${j.counts.issues} issues. ${labels[j.status] || j.status}.`;
-      if (previous?.status !== j?.status || previous?.id !== j?.id)
+      if (
+        previous?.status !== j?.status ||
+        previous?.id !== j?.id ||
+        previous?.counts.issues !== j?.counts.issues
+      )
         $("announcement").textContent = j
-          ? labels[j.status]
+          ? `${labels[j.status] || j.status}. ${issueMessage}`.trim()
           : "Saved catalogue loaded.";
       $("connection").textContent = data.cleanup_pending
         ? "Baseline saved · clearing previous demo records. Refresh status before resetting again."
@@ -494,6 +571,7 @@
       button.tabIndex = selected ? 0 : -1;
     }
     $("catalogue-panel").setAttribute("aria-labelledby", `tab-${view}`);
+    updateAttention();
     loadView();
   }
   $("start").addEventListener("click", () =>
