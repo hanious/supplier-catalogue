@@ -55,9 +55,10 @@
     td.append(value instanceof Node ? value : text(value));
     return td;
   }
-  function pill(value, attention = false) {
+  function pill(value, tone = "info") {
     const span = document.createElement("span");
-    span.className = "pill" + (attention ? " attention" : "");
+    span.className = "pill";
+    span.dataset.tone = tone;
     span.textContent = value;
     return span;
   }
@@ -288,36 +289,49 @@
     const rows = [];
     for (const item of items) {
       const tr = document.createElement("tr");
-      if (catalogue)
+      if (catalogue) {
+        tr.dataset.state = item.active ? "active" : "withdrawn";
         tr.append(
           cell(productName(item)),
           cell(money(item.price), "money"),
-          cell(pill(item.active ? "Active" : "Withdrawn", !item.active)),
+          cell(
+            pill(
+              item.active ? "Active" : "Withdrawn",
+              item.active ? "positive" : "neutral",
+            ),
+          ),
         );
-      else if (state.view === "changes")
+      } else if (state.view === "changes") {
+        tr.dataset.state = item.after.active ? "active" : "withdrawn";
         tr.append(
           cell(productName(item.after)),
           cell(item.kind),
           cell(difference(item)),
         );
-      else if (state.view === "issues") {
+      } else if (state.view === "issues") {
+        tr.dataset.state = item.resolved ? "resolved" : "issue";
         const record = document.createElement("span");
         record.append(productName(item.after));
         const identity = document.createElement("span");
         identity.className = "product-id";
         identity.textContent = `${item.update_id}/${item.source_id}`;
         record.append(identity);
-        tr.append(
-          cell(record),
-          cell(item.problem),
-          cell(
+        const action = document.createElement("div");
+        action.className = "issue-action";
+        action.append(
+          pill(
+            item.resolved ? "Resolved" : "Needs correction",
+            item.resolved ? "positive" : "attention",
+          ),
+          text(
             item.resolved
               ? "Resolved by newer supplier details"
               : "Ask supplier for a corrected record",
-            item.resolved ? "muted" : "",
           ),
         );
+        tr.append(cell(record), cell(item.problem), cell(action));
       } else {
+        tr.dataset.state = item.status;
         const inspect = document.createElement("button");
         inspect.textContent = item.id.slice(0, 13);
         inspect.setAttribute("aria-label", `Inspect update ${item.id}`);
@@ -330,7 +344,15 @@
           cell(
             pill(
               labels[item.status] || item.status,
-              ["interrupted", "finished_with_issues"].includes(item.status),
+              ["interrupted", "finished_with_issues", "unavailable"].includes(
+                item.status,
+              )
+                ? "attention"
+                : item.status === "completed"
+                  ? "positive"
+                  : item.status === "abandoned"
+                    ? "neutral"
+                    : "info",
             ),
           ),
           cell(`${item.processed} / ${item.total}`),
