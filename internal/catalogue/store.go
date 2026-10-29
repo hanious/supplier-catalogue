@@ -23,8 +23,7 @@ type Control struct {
 	Sequence     int64    `json:"sequence"`
 	Generation   int64    `json:"generation"`
 	DataRevision int64    `json:"data_revision"`
-	Revision     int64    `json:"-"`
-	ResetFrom    string   `json:"reset_from,omitempty"`
+	Revision     int64    `json:"-" dynamodbav:"-"`
 	Retired      []string `json:"retired,omitempty"`
 }
 
@@ -48,6 +47,16 @@ func key(pk, sk string) map[string]types.AttributeValue {
 }
 
 func encode(pk, sk string, value any, rev int64) (map[string]types.AttributeValue, error) {
+	if control, ok := value.(Control); ok {
+		attrs, err := attributevalue.MarshalMap(control)
+		if err != nil {
+			return nil, err
+		}
+		attrs["PK"] = &types.AttributeValueMemberS{Value: pk}
+		attrs["SK"] = &types.AttributeValueMemberS{Value: sk}
+		attrs["Rev"] = &types.AttributeValueMemberN{Value: strconv.FormatInt(rev, 10)}
+		return attrs, nil
+	}
 	data, err := json.Marshal(value)
 	if err != nil {
 		return nil, err
@@ -72,8 +81,14 @@ func (s *Store) read(ctx context.Context, pk, sk string, value any) (int64, erro
 	if err := attributevalue.UnmarshalMap(out.Item, &row); err != nil {
 		return 0, err
 	}
-	if err := json.Unmarshal([]byte(row.Data), value); err != nil {
-		return 0, err
+	if control, ok := value.(*Control); ok {
+		if err := attributevalue.UnmarshalMap(out.Item, control); err != nil {
+			return 0, err
+		}
+	} else {
+		if err := json.Unmarshal([]byte(row.Data), value); err != nil {
+			return 0, err
+		}
 	}
 	if job, ok := value.(*Job); ok {
 		job.Token = row.Token
@@ -134,6 +149,9 @@ func (s *Store) Control(ctx context.Context) (Control, error) {
 		return s.Control(ctx)
 	}
 	c.Revision = rev
+	if err == nil && !ValidID(c.Epoch) {
+		return c, fmt.Errorf("stored coordinator has no valid epoch; initialize a fresh demo table")
+	}
 	return c, err
 }
 
@@ -165,6 +183,9 @@ func (s *Store) Product(ctx context.Context, epoch, id string) (*Product, error)
 // Start atomically publishes an immutable fixture, takes the supplier lock, and saves a job.
 // Reusing a request key or an update ID returns the original job.
 func (s *Store) Start(ctx context.Context, scenario, requestID, updateID string) (Job, error) {
+	if scenario == "baseline" {
+		return Job{}, invalid("use Reset to load the demo baseline")
+	}
 	if !ValidID(requestID) {
 		return Job{}, invalid("a bounded idempotency key is required")
 	}
@@ -189,36 +210,19 @@ func (s *Store) Start(ctx context.Context, scenario, requestID, updateID string)
 		if err != nil {
 			return Job{}, err
 		}
-		if c.Current == "" && scenario != "baseline" {
+		if c.Current == "" {
 			return Job{}, invalid("load the demo baseline with Reset demo first")
 		}
-		if scenario == "baseline" && len(c.Retired) > 0 {
-			return Job{}, fmt.Errorf("%w: previous demo cleanup is still running", ErrConflict)
-		}
-		var abandoned *Job
-		if c.Active != "" && scenario == "baseline" {
-			old, e := s.Job(ctx, c.Active)
-			if e != nil {
-				return Job{}, e
-			}
-			if old.Status == "interrupted" {
-				old.Status = "abandoned"
-				old.FinishedAt = timestamp()
-				abandoned = &old
-			} else {
-				return Job{}, fmt.Errorf("%w: wait for active processing before resetting", ErrConflict)
-			}
-		}
-		if c.Active != "" && abandoned == nil {
+		if c.Active != "" {
 			return Job{}, fmt.Errorf("%w: an unfinished update already exists", ErrConflict)
 		}
 		// Bound retained jobs and their record ledgers. Reset starts a fresh demo.
-		if c.Sequence >= 50 && scenario != "baseline" {
+		if c.Sequence >= 50 {
 			return Job{}, invalid("demo history limit reached; reset the demo")
 		}
 		var m Manifest
-		var manifestWrite *types.TransactWriteItem
-		if scenario != "baseline" && (updateID != "" || c.Latest != "") {
+		var writes []types.TransactWriteItem
+		if updateID != "" || c.Latest != "" {
 			id := updateID
 			if id == "" {
 				id = c.Latest
@@ -240,55 +244,77 @@ func (s *Store) Start(ctx context.Context, scenario, requestID, updateID string)
 				return Job{}, err
 			}
 			m.Epoch = c.Epoch
-			if scenario == "baseline" {
-				m.Epoch = "E" + digest(requestID)
-			}
 			write, e := s.put("UPDATES", m.ID, m, 0)
 			if e != nil {
 				return Job{}, e
 			}
-			manifestWrite = &write
+			writes = append(writes, write)
 		}
-		j := Job{ID: m.ID, Epoch: c.Epoch, Scenario: m.Scenario, Status: "running", Total: m.Total, CreatedAt: timestamp(), UpdatedAt: timestamp()}
-		if m.Scenario == "baseline" {
-			j.Epoch = "E" + digest(requestID)
-			c.ResetFrom = c.Epoch
-		}
-		c.Active = j.ID
-		c.Current = j.ID
 		c.Latest = m.ID
-		cw, e := s.put("META", "CONTROL", c, c.Revision)
-		if e != nil {
-			return j, e
-		}
-		jw, e := s.put("JOBS", j.ID, j, 0)
-		if e != nil {
-			return j, e
-		}
-		rw, e := s.put("REQUESTS", requestID, struct {
-			JobID string
-			Epoch string
-		}{JobID: j.ID, Epoch: j.Epoch}, 0)
-		if e != nil {
-			return j, e
-		}
-		writes := []types.TransactWriteItem{cw, jw, rw}
-		if abandoned != nil {
-			aw, e := s.put("JOBS", abandoned.ID, *abandoned, abandoned.Revision)
-			if e != nil {
-				return j, e
-			}
-			writes = append(writes, aw)
-		}
-		if manifestWrite != nil {
-			writes = append(writes, *manifestWrite)
-		}
-		if err = s.transaction(ctx, writes...); errors.Is(err, ErrConflict) {
+		j, err := s.createJob(ctx, c, m, requestID, writes...)
+		if errors.Is(err, ErrConflict) {
 			continue
-		} else if err != nil {
-			return j, err
 		}
-		return s.Job(ctx, j.ID)
+		return j, err
+	}
+	return Job{}, ErrConflict
+}
+
+// Reset stages a fresh baseline and retires any abandoned staging epochs.
+// The visible epoch changes only when the baseline completes.
+func (s *Store) Reset(ctx context.Context, requestID string) (Job, error) {
+	if !ValidID(requestID) {
+		return Job{}, invalid("a bounded idempotency key is required")
+	}
+	for attempt := 0; attempt < 8; attempt++ {
+		var prior struct{ JobID string }
+		if _, err := s.read(ctx, "REQUESTS", requestID, &prior); err == nil {
+			return s.Job(ctx, prior.JobID)
+		} else if !errors.Is(err, ErrNotFound) {
+			return Job{}, err
+		}
+		c, err := s.Control(ctx)
+		if err != nil {
+			return Job{}, err
+		}
+		var writes []types.TransactWriteItem
+		if c.Active != "" {
+			old, e := s.Job(ctx, c.Active)
+			if e != nil {
+				return Job{}, e
+			}
+			if old.Status != "interrupted" {
+				return Job{}, fmt.Errorf("%w: wait for active processing before resetting", ErrConflict)
+			}
+			old.Status = "abandoned"
+			old.FinishedAt = timestamp()
+			if old.Epoch != c.Epoch {
+				c.Retired = append(c.Retired, old.Epoch)
+			}
+			write, e := s.put("JOBS", old.ID, old, old.Revision)
+			if e != nil {
+				return Job{}, e
+			}
+			writes = append(writes, write)
+		} else if len(c.Retired) > 0 {
+			return Job{}, fmt.Errorf("%w: previous demo cleanup is still running", ErrConflict)
+		}
+		m, err := NewManifest("U"+digest(requestID), "baseline", c.Sequence+1)
+		if err != nil {
+			return Job{}, err
+		}
+		m.Epoch = "E" + digest(requestID)
+		mw, err := s.put("UPDATES", m.ID, m, 0)
+		if err != nil {
+			return Job{}, err
+		}
+		writes = append(writes, mw)
+		c.Latest = ""
+		j, err := s.createJob(ctx, c, m, requestID, writes...)
+		if errors.Is(err, ErrConflict) {
+			continue
+		}
+		return j, err
 	}
 	return Job{}, ErrConflict
 }
@@ -301,10 +327,21 @@ func (s *Store) Publish(ctx context.Context, scenario, requestID string) (Manife
 	id := "U" + digest(requestID)
 	if m, err := s.Manifest(ctx, id); err == nil {
 		return m, nil
+	} else if !errors.Is(err, ErrNotFound) {
+		return Manifest{}, err
 	}
 	c, err := s.Control(ctx)
 	if err != nil {
 		return Manifest{}, err
+	}
+	if c.Active != "" {
+		active, err := s.Job(ctx, c.Active)
+		if err != nil {
+			return Manifest{}, err
+		}
+		if active.Scenario == "baseline" {
+			return Manifest{}, fmt.Errorf("%w: finish the demo reset before publishing", ErrConflict)
+		}
 	}
 	if c.Sequence >= 50 {
 		return Manifest{}, invalid("demo history limit reached; reset the demo")
@@ -359,7 +396,12 @@ func (s *Store) Acquire(ctx context.Context, id, token string, lease time.Durati
 	if err != nil {
 		return j, err
 	}
-	check := types.TransactWriteItem{ConditionCheck: &types.ConditionCheck{TableName: aws.String(s.Table), Key: key("META", "CONTROL"), ConditionExpression: aws.String("contains(#data, :id)"), ExpressionAttributeNames: map[string]string{"#data": "Data"}, ExpressionAttributeValues: map[string]types.AttributeValue{":id": &types.AttributeValueMemberS{Value: `"active":"` + id + `"`}}}}
+	check := types.TransactWriteItem{ConditionCheck: &types.ConditionCheck{
+		TableName: aws.String(s.Table), Key: key("META", "CONTROL"),
+		ConditionExpression:       aws.String("#active = :id"),
+		ExpressionAttributeNames:  map[string]string{"#active": "Active"},
+		ExpressionAttributeValues: map[string]types.AttributeValue{":id": &types.AttributeValueMemberS{Value: id}},
+	}}
 	if err = s.transaction(ctx, w, check); err != nil {
 		return j, err
 	}
@@ -511,7 +553,6 @@ func (s *Store) Checkpoint(ctx context.Context, j *Job, page Page) error {
 			c.DataRevision = 0
 			c.Sequence = 0
 			c.Generation++
-			c.ResetFrom = ""
 		}
 	}
 	jw, err := s.fencedJob(next)
@@ -744,6 +785,33 @@ func (s *Store) deleteRows(ctx context.Context, rows []item) error {
 		return fmt.Errorf("cleanup throttled; durable retirement will retry")
 	}
 	return nil
+}
+
+// createJob saves the shared job, request key, and coordinator transaction.
+// Callers add the manifest and any abandonment writes for their operation.
+func (s *Store) createJob(ctx context.Context, c Control, m Manifest, requestID string, writes ...types.TransactWriteItem) (Job, error) {
+	j := Job{ID: m.ID, Epoch: m.Epoch, Scenario: m.Scenario, Status: "running", Total: m.Total, CreatedAt: timestamp(), UpdatedAt: timestamp()}
+	c.Active = j.ID
+	c.Current = j.ID
+	cw, err := s.put("META", "CONTROL", c, c.Revision)
+	if err != nil {
+		return j, err
+	}
+	jw, err := s.put("JOBS", j.ID, j, 0)
+	if err != nil {
+		return j, err
+	}
+	rw, err := s.put("REQUESTS", requestID, struct {
+		JobID string
+		Epoch string
+	}{JobID: j.ID, Epoch: j.Epoch}, 0)
+	if err != nil {
+		return j, err
+	}
+	if err = s.transaction(ctx, append(writes, cw, jw, rw)...); err != nil {
+		return j, err
+	}
+	return s.Job(ctx, j.ID)
 }
 
 func timestamp() string { return time.Now().UTC().Format(time.RFC3339Nano) }

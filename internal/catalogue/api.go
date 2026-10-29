@@ -225,7 +225,7 @@ func (a *API) reset(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, invalid("required reset confirmation"))
 		return
 	}
-	j, err := a.Store.Start(r.Context(), "baseline", r.Header.Get("Idempotency-Key"), "")
+	j, err := a.Store.Reset(r.Context(), r.Header.Get("Idempotency-Key"))
 	if err != nil {
 		a.fail(w, err)
 		return

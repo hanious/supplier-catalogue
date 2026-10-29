@@ -242,16 +242,18 @@
   }
   function buttons() {
     const active = state.job?.status === "running";
+    const interrupted = state.job?.status === "interrupted";
+    const resetting = state.job?.scenario === "baseline" && (active || interrupted);
     $("start").disabled =
       state.busy ||
       !state.baselineReady ||
       active ||
-      state.job?.status === "interrupted";
-    $("resume").hidden = state.job?.status !== "interrupted";
+      interrupted;
+    $("resume").hidden = !interrupted;
     $("resume").disabled = state.busy;
-    $("reset").disabled = state.busy || active || state.cleanupPending;
+    $("reset").disabled = state.busy || active || (state.cleanupPending && !interrupted);
     $("restore").disabled = state.busy || !state.job;
-    $("publish").disabled = state.busy;
+    $("publish").disabled = state.busy || resetting;
     $("replay").disabled = state.busy || !state.job || active;
   }
   async function status() {

@@ -93,6 +93,13 @@ func finish(t *testing.T, w *Worker, id string) Job {
 
 func startTest(t *testing.T, s *Store, scenario string) Job {
 	t.Helper()
+	if scenario == "baseline" {
+		j, err := s.Reset(context.Background(), fmt.Sprintf("request-%d", time.Now().UnixNano()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return j
+	}
 	j, err := s.Start(context.Background(), scenario, fmt.Sprintf("request-%d", time.Now().UnixNano()), "")
 	if err != nil {
 		t.Fatal(err)
