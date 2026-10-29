@@ -374,62 +374,49 @@ func TestIntegrationIssuesResolveWithoutRewritingHistory(t *testing.T) {
 	}
 }
 
-func TestIntegrationQueuePublicationCrashGapAndCacheGeneration(t *testing.T) {
-	for _, afterDispatch := range []bool{false, true} {
-		t.Run(fmt.Sprintf("dispatched-%t", afterDispatch), func(t *testing.T) {
-			s := integrationStore(t)
-			w := integrationWorker(t, s)
-			wakeups := 0
-			api := (&API{Store: s, Wake: func(context.Context) error {
-				if afterDispatch {
-					wakeups++
-				}
-				return errors.New("process lost before acknowledgement")
-			}}).Handler()
-			get := httptest.NewRecorder()
-			api.ServeHTTP(get, httptest.NewRequest("GET", "/api/products", nil))
-			etag := get.Header().Get("ETag")
-			req := httptest.NewRequest("POST", "/api/updates/start", strings.NewReader(`{"scenario":"normal"}`))
-			req.Header.Set("Idempotency-Key", "queue-crash")
-			rec := httptest.NewRecorder()
-			api.ServeHTTP(rec, req)
-			if rec.Code != 202 {
-				t.Fatalf("start = %d: %s", rec.Code, rec.Body.String())
-			}
-			var j Job
-			if err := json.Unmarshal(rec.Body.Bytes(), &j); err != nil {
-				t.Fatal(err)
-			}
-			// Recovery dispatch reads this same durable coordinator after either gap.
-			c, err := s.Control(context.Background())
-			if err != nil || c.Active != j.ID {
-				t.Fatalf("lost durable work: %+v, %v", c, err)
-			}
-			finish(t, w, j.ID)
-			cached := httptest.NewRecorder()
-			request := httptest.NewRequest("GET", "/api/products", nil)
-			request.Header.Set("If-None-Match", etag)
-			api.ServeHTTP(cached, request)
-			if cached.Code != 200 || cached.Header().Get("ETag") == etag {
-				t.Fatal("committed changes left a stale validator")
-			}
-			fresh := cached.Header().Get("ETag")
-			again := httptest.NewRecorder()
-			request = httptest.NewRequest("GET", "/api/products", nil)
-			request.Header.Set("If-None-Match", fresh)
-			api.ServeHTTP(again, request)
-			if again.Code != 304 {
-				t.Fatalf("unchanged catalogue = %d, want 304", again.Code)
-			}
-			status := httptest.NewRecorder()
-			api.ServeHTTP(status, httptest.NewRequest("GET", "/api/status", nil))
-			if status.Header().Get("Cache-Control") != "no-store" {
-				t.Fatal("progress can be cached")
-			}
-			if afterDispatch && wakeups != 1 {
-				t.Fatal("dispatch fixture not exercised")
-			}
-		})
+func TestIntegrationStartPersistsWorkAndInvalidatesCatalogueCache(t *testing.T) {
+	s := integrationStore(t)
+	w := integrationWorker(t, s)
+	api := (&API{Store: s}).Handler()
+	get := httptest.NewRecorder()
+	api.ServeHTTP(get, httptest.NewRequest("GET", "/api/products", nil))
+	etag := get.Header().Get("ETag")
+	req := httptest.NewRequest("POST", "/api/updates/start", strings.NewReader(`{"scenario":"normal"}`))
+	req.Header.Set("Idempotency-Key", "durable-start")
+	rec := httptest.NewRecorder()
+	api.ServeHTTP(rec, req)
+	if rec.Code != 202 {
+		t.Fatalf("start = %d: %s, want 202", rec.Code, rec.Body.String())
+	}
+	var j Job
+	if err := json.Unmarshal(rec.Body.Bytes(), &j); err != nil {
+		t.Fatal(err)
+	}
+	// A worker can discover the saved job after the request has finished.
+	c, err := s.Control(context.Background())
+	if err != nil || c.Active != j.ID {
+		t.Fatalf("saved active job = %q, %v, want %q", c.Active, err, j.ID)
+	}
+	finish(t, w, j.ID)
+	cached := httptest.NewRecorder()
+	request := httptest.NewRequest("GET", "/api/products", nil)
+	request.Header.Set("If-None-Match", etag)
+	api.ServeHTTP(cached, request)
+	if cached.Code != 200 || cached.Header().Get("ETag") == etag {
+		t.Fatal("committed changes left a stale validator")
+	}
+	fresh := cached.Header().Get("ETag")
+	again := httptest.NewRecorder()
+	request = httptest.NewRequest("GET", "/api/products", nil)
+	request.Header.Set("If-None-Match", fresh)
+	api.ServeHTTP(again, request)
+	if again.Code != 304 {
+		t.Fatalf("unchanged catalogue = %d, want 304", again.Code)
+	}
+	status := httptest.NewRecorder()
+	api.ServeHTTP(status, httptest.NewRequest("GET", "/api/status", nil))
+	if status.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("progress can be cached")
 	}
 }
 

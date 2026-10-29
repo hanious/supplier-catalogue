@@ -1,7 +1,6 @@
 package catalogue
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -10,11 +9,10 @@ import (
 	"strings"
 )
 
-// API serves staff operations; wakeups never replace durable job state.
+// API serves staff operations and saves work for the polling worker.
 type API struct {
 	Store         *Store
 	Origin        string
-	Wake          func(context.Context) error
 	Static        http.Handler
 	catalogueView catalogueCache
 	changeView    changeCache
@@ -99,14 +97,6 @@ func (a *API) fail(w http.ResponseWriter, err error) {
 	writeJSON(w, status, map[string]string{"error": err.Error()})
 }
 
-func (a *API) notify(ctx context.Context) {
-	if a.Wake != nil {
-		if err := a.Wake(ctx); err != nil {
-			slog.Warn("work saved; scheduled dispatcher will recover queue publication", "error", err)
-		}
-	}
-}
-
 func (a *API) status(w http.ResponseWriter, r *http.Request) {
 	c, err := a.Store.Control(r.Context())
 	if err != nil {
@@ -161,7 +151,6 @@ func (a *API) start(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	a.notify(r.Context())
 	writeJSON(w, 202, j)
 }
 
@@ -176,7 +165,6 @@ func (a *API) resume(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	a.notify(r.Context())
 	writeJSON(w, 202, j)
 }
 
@@ -230,7 +218,6 @@ func (a *API) reset(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	a.notify(r.Context())
 	writeJSON(w, 202, j)
 }
 

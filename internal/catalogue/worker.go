@@ -54,7 +54,7 @@ func (s *SupplierClient) Fetch(ctx context.Context, id string, cursor int) (Page
 	return page, nil
 }
 
-// Worker processes bounded slices; durable state is authoritative over queue delivery.
+// Worker processes bounded slices using durable job state.
 type Worker struct {
 	Store       *Store
 	Supplier    *SupplierClient
@@ -66,7 +66,7 @@ type Worker struct {
 	Fault func(string) error
 }
 
-// Tick processes current work synchronously and returns whether another wakeup is useful.
+// Tick processes current work synchronously and reports whether more work remains.
 func (w *Worker) Tick(ctx context.Context) (bool, error) {
 	c, err := w.Store.Control(ctx)
 	if err != nil {

@@ -2,15 +2,11 @@ name: supplier-catalogue
 
 x-environment: &environment
   AWS_REGION: ${AWS_REGION:-us-east-1}
-  MODE: api
-  AWS_ACCESS_KEY_ID: local
-  AWS_SECRET_ACCESS_KEY: local
   DYNAMODB_ENDPOINT: http://dynamodb:8000
   TABLE_NAME: ${TABLE_NAME:-supplier-catalogue-local}
   SUPPLIER_URL: http://supplier:8081
   HTTP_ADDR: :8080
   ALLOWED_ORIGIN: http://localhost:55801
-  QUEUE_URL: ""
   RECORD_INTERVAL_MS: ${RECORD_INTERVAL_MS:-0}
   RECORDS_PER_SLICE: ${RECORDS_PER_SLICE:-0}
   LEASE_SECONDS: 20

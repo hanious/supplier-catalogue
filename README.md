@@ -59,12 +59,13 @@ and the integration endpoint automatically.
 ## Configuration
 
 Configuration defaults are in `.env.example` and `docker-compose.yml`. Local
-services use synthetic credentials; no AWS account is needed. `DYNAMODB_ENDPOINT`
-selects DynamoDB Local. `TABLE_NAME` scopes all storage; `SUPPLIER_URL` is a fixed
+services use fixed synthetic credentials; no AWS account is needed.
+`DYNAMODB_ENDPOINT` is required and selects DynamoDB Local. `AWS_REGION` is used
+for SDK request signing. `TABLE_NAME` scopes all storage; `SUPPLIER_URL` is a fixed
 trusted HTTP origin. `ALLOWED_ORIGIN` controls browser CORS. `HTTP_ADDR` sets the
 local listener. `LEASE_SECONDS`,
 `WORK_SLICE_SECONDS`, `RECORDS_PER_SLICE`, and `RECORD_INTERVAL_MS` bound worker
-execution; leave `QUEUE_URL` empty locally. Compose optionally reads
+execution. Compose optionally reads
 `AWS_REGION`, `TABLE_NAME`, `RECORDS_PER_SLICE` and
 `RECORD_INTERVAL_MS` from a `.env` file; never commit credentials.
 
@@ -81,7 +82,7 @@ execution; leave `QUEUE_URL` empty locally. Compose optionally reads
 
 ## Unfinished work
 
-- AWS deployment, infrastructure, packaging and hosting are unfinished. Existing
-  Lambda/SQS handlers have not been deployed or tested in AWS.
+- AWS deployment is unfinished, including infrastructure, cloud runtime handlers,
+  packaging, hosting and cloud end-to-end tests.
 - A real supplier connection and staff authentication are outside this proof of
   concept's current scope.
