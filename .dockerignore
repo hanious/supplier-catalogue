@@ -1,0 +1,10 @@
+.git
+.agents
+.codex
+node_modules
+output
+dist
+.env
+.env.*
+!.env.example
+docs
