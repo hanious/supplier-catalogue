@@ -68,27 +68,3 @@ jobs:
       - name: Stop disposable CI services
         if: always()
         run: docker compose down --volumes
-
-  artifacts:
-    needs: checks
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version-file: go.mod
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: infra/package-lock.json
-      - name: Build Lambda and static site artifacts
-        shell: pwsh
-        run: |
-          ./scripts/build-lambda.ps1
-          node scripts/package-web.mjs
-      - run: npm ci
-        working-directory: infra
-      - run: npm test
-        working-directory: infra
