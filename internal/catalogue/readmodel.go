@@ -69,7 +69,6 @@ func (s *Store) allRows(ctx context.Context, pk string) ([]item, error) {
 type catalogueSnapshot struct {
 	Epoch      string
 	Generation int64
-	Revision   int64
 	Products   []Product
 }
 
@@ -139,7 +138,7 @@ func (c *catalogueCache) snapshot(ctx context.Context, store *Store) (catalogueS
 		for _, p := range c.products {
 			products = append(products, p)
 		}
-		return catalogueSnapshot{Epoch: c.epoch, Generation: control.Generation, Revision: c.revision, Products: products}, nil
+		return catalogueSnapshot{Epoch: c.epoch, Generation: control.Generation, Products: products}, nil
 	}
 	return catalogueSnapshot{}, ErrConflict
 }
@@ -161,10 +160,10 @@ func (c *changeCache) snapshot(ctx context.Context, store *Store, job Job) ([]Re
 		c.rows = nil
 	}
 	expected := job.Counts.Added + job.Counts.Changed + job.Counts.Withdrawn
-	if int64(job.LastChange) <= c.last && expected <= len(c.rows) {
+	if expected <= len(c.rows) {
 		return append([]Result{}, c.rows[:expected]...), nil
 	}
-	rows, err := store.rangeRows(ctx, job.Epoch+"|CHANGES|"+job.ID, c.last, int64(job.LastChange))
+	rows, err := store.rangeRows(ctx, job.Epoch+"|CHANGES|"+job.ID, c.last, int64(job.Processed))
 	if err != nil {
 		return nil, err
 	}
@@ -180,6 +179,6 @@ func (c *changeCache) snapshot(ctx context.Context, store *Store, job Job) ([]Re
 		return nil, fmt.Errorf("change projection is incomplete")
 	}
 	c.rows = append(c.rows, additions...)
-	c.last = int64(job.LastChange)
+	c.last = int64(job.Processed)
 	return append([]Result{}, c.rows...), nil
 }

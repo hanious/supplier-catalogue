@@ -484,18 +484,12 @@ func (s *Store) Commit(ctx context.Context, j *Job, record Record) error {
 		}
 	}
 	if r.Kind != "issue" && r.Kind != "ignored" {
-		next.LastChange = next.Processed
 		// An ordered read projection keeps sparse change pages and totals exact.
 		change, e := s.put(j.Epoch+"|CHANGES|"+j.ID, position(int64(next.Processed)), r, 0)
 		if e != nil {
 			return e
 		}
 		writes = append(writes, change)
-		jw, e = s.fencedJob(next)
-		if e != nil {
-			return e
-		}
-		writes[0] = jw
 	}
 	if r.Kind == "issue" {
 		iw, e := s.put(j.Epoch+"|ISSUES", j.ID+"|"+record.SourceID, r, 0)

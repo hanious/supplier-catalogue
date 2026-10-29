@@ -5,7 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
 func viewResponse(t *testing.T, handler http.Handler, path string) struct {
@@ -185,4 +189,60 @@ func TestIntegrationChangeCacheHandlesAQueuedOlderRequest(t *testing.T) {
 	if err != nil || len(queued) != 4 {
 		t.Fatalf("queued changes = %d, %v", len(queued), err)
 	}
+}
+
+func TestIntegrationWarmViewsReadOnlyNewProjectionEntries(t *testing.T) {
+	s := integrationStore(t)
+	w := integrationWorker(t, s)
+	w.RecordLimit = 1
+	j := startTest(t, s, "out_of_order")
+	if _, err := w.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	options := s.DB.Options()
+	counter := &queryCounter{base: options.HTTPClient}
+	options.HTTPClient = counter
+	api := (&API{Store: &Store{DB: dynamodb.New(options), Table: s.Table}}).Handler()
+	viewResponse(t, api, "/api/products")
+	changes := viewResponse(t, api, "/api/changes?update_id="+j.ID)
+	if changes.Total != 1 || counter.queries.Load() == 0 {
+		t.Fatalf("cold changes = %d with %d queries, want 1 change loaded from storage", changes.Total, counter.queries.Load())
+	}
+	counter.queries.Store(0)
+	// The next record is stale: durable progress advances without a visible change.
+	if _, err := w.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	viewResponse(t, api, "/api/products")
+	changes = viewResponse(t, api, "/api/changes?update_id="+j.ID)
+	if changes.Total != 1 || counter.queries.Load() != 0 {
+		t.Errorf("views after ignored record = %d changes, %d queries, want 1 change and no projection queries", changes.Total, counter.queries.Load())
+	}
+	if _, err := w.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	viewResponse(t, api, "/api/products")
+	changes = viewResponse(t, api, "/api/changes?update_id="+j.ID)
+	if changes.Total != 2 || counter.queries.Load() != 2 {
+		t.Errorf("views after withdrawal = %d changes, %d queries, want 2 changes and one query per projection", changes.Total, counter.queries.Load())
+	}
+	counter.queries.Store(0)
+	finish(t, w, j.ID)
+	viewResponse(t, api, "/api/products")
+	viewResponse(t, api, "/api/changes?update_id="+j.ID)
+	if got := counter.queries.Load(); got != 0 {
+		t.Errorf("unchanged completed views issued %d projection queries, want 0", got)
+	}
+}
+
+type queryCounter struct {
+	base    dynamodb.HTTPClient
+	queries atomic.Int64
+}
+
+func (c *queryCounter) Do(r *http.Request) (*http.Response, error) {
+	if strings.HasSuffix(r.Header.Get("X-Amz-Target"), ".Query") {
+		c.queries.Add(1)
+	}
+	return c.base.Do(r)
 }
