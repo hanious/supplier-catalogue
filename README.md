@@ -56,10 +56,9 @@ Host tests skip the DynamoDB integration suite unless
 `INTEGRATION_DYNAMODB_ENDPOINT` points to a running instance. Docker supplies Go
 and the integration endpoint automatically.
 
-## Configuration
+## Configuration (for future AWS deployment)
 
-Configuration defaults are in `.env.example` and `docker-compose.yml`. Local
-services use fixed synthetic credentials; no AWS account is needed.
+Configuration defaults are in `.env.example` and `docker-compose.yml`.
 `DYNAMODB_ENDPOINT` is required and selects DynamoDB Local. `AWS_REGION` is used
 for SDK request signing. `TABLE_NAME` scopes all storage; `SUPPLIER_URL` is a fixed
 trusted HTTP origin. `ALLOWED_ORIGIN` controls browser CORS. `HTTP_ADDR` sets the
@@ -86,3 +85,15 @@ execution. Compose optionally reads
   packaging, hosting and cloud end-to-end tests.
 - A real supplier connection and staff authentication are outside this proof of
   concept's current scope.
+
+## AI usage
+
+As Golang is a language foreign to me by the time of this assessment, AI usage was required. 
+
+1. First, for every project, I like to set up my codebase with relevant skills. For this project, the ones I used are most notably Golang coding support skill and AWS deployment.
+2. I then updated project context in AGENTS.md, the goal I would like to achieve, and my personal coding conventions.
+3. For every commit, I have the AI run through an evaluation set to ensure the codes meet coding standards.
+4. When the project is done scaffolding, I have the AI teach me back the codes, trace the data flow, and help me understand everything bits by bits.
+
+That is my workflow mostly simplified, I would be more than delighted to be discussing more on this!
+For any further information, please contact me at tvbngocc@gmail.com.
