@@ -183,6 +183,43 @@ func TestIntegrationControlRejectsAnInvalidEpoch(t *testing.T) {
 	}
 }
 
+func TestIntegrationResetRejectsAPublicationFromARetiredEpoch(t *testing.T) {
+	s := integrationStore(t)
+	w := integrationWorker(t, s)
+	ctx := t.Context()
+	old, err := s.Publish(ctx, "normal", "old-publication")
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseline, err := s.Reset(ctx, "retire-publication")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done := finish(t, w, baseline.ID); done.Status != "completed" {
+		t.Fatalf("reset status = %q, want completed", done.Status)
+	}
+	// Retired manifests still exist until cleanup, but cannot create new jobs.
+	if _, err := s.Start(ctx, "normal", "start-old-publication", old.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Start(retired publication %s) = %v, want not found", old.ID, err)
+	}
+	fresh, err := s.Publish(ctx, "normal", "current-publication")
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := s.Start(ctx, "normal", "start-current-publication", fresh.ID)
+	if err != nil || job.Epoch != baseline.Epoch {
+		t.Fatalf("Start(current publication) = %+v, %v, want visible epoch %s", job, err, baseline.Epoch)
+	}
+	if done := finish(t, w, job.ID); done.Status != "completed" {
+		t.Fatalf("current publication status = %q, want completed", done.Status)
+	}
+	products := viewResponse(t, (&API{Store: s}).Handler(), "/api/products")
+	if products.Total != DemoProductCount+10 {
+		t.Errorf("products after current publication = %d, want %d", products.Total, DemoProductCount+10)
+	}
+	cleanupAll(t, s)
+}
+
 func pauseAfterRecord(t *testing.T, w *Worker, id string) Job {
 	t.Helper()
 	w.RecordLimit = 1

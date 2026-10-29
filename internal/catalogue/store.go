@@ -231,6 +231,9 @@ func (s *Store) Start(ctx context.Context, scenario, requestID, updateID string)
 			if err != nil {
 				return Job{}, err
 			}
+			if m.Epoch != c.Epoch {
+				return Job{}, ErrNotFound
+			}
 			if _, e := s.Job(ctx, id); e == nil {
 				m = Manifest{}
 			} else if !errors.Is(e, ErrNotFound) {
