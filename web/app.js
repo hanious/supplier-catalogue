@@ -322,7 +322,8 @@
         $("announcement").textContent = j
           ? `${labels[j.status] || j.status}. ${issueMessage}`.trim()
           : "Saved catalogue loaded.";
-      $("connection").textContent = data.cleanup_pending
+      $("connection").textContent = data.cleanup_pending &&
+        !["running", "interrupted"].includes(j?.status)
         ? "Baseline saved · clearing previous demo records. Refresh status before resetting again."
         : "Latest saved catalogue · status checked just now";
       showError("");

@@ -1,0 +1,20 @@
+#!/bin/sh
+set -eu
+
+if [ "$(git branch --show-current)" = main ]; then
+  echo "Push a feature branch and open a PR; direct main pushes are blocked." >&2
+  exit 1
+fi
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [ "$remote_ref" = refs/heads/main ]; then
+    echo "Direct pushes to main are blocked." >&2
+    exit 1
+  fi
+  case "$local_sha" in *[!0]*) ;; *) continue ;; esac
+  case "$remote_sha" in
+    *[!0]*) range="$remote_sha..$local_sha" ;;
+    *) range="$local_sha" ;;
+  esac
+  gitleaks git --log-opts="$range" --redact --no-banner
+done

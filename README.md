@@ -30,6 +30,15 @@ docker compose --profile tools run --build --rm test
 docker compose down
 ```
 
+The GitHub **Integration** workflow checks secrets, Go formatting/vet, Docker
+integration tests with the race detector, live HTTP scenarios, and AWS artifacts.
+Install Gitleaks 8.30.1 on your PATH and run `git config core.hooksPath .githooks`
+to enable hooks that block secret/environment-file commits and direct main pushes.
+
+The coordinator uses native DynamoDB attributes. Synthetic tables created before
+this refactor require a fresh `TABLE_NAME`; old demo volumes can be removed when
+their contents are no longer needed.
+
 The container test command includes the DynamoDB integration suite. Ordinary
 `go test` skips those tests unless `INTEGRATION_DYNAMODB_ENDPOINT` is configured.
 `docker compose down` preserves the database volume. Source requires Go 1.26;

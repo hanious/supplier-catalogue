@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+git diff --cached --name-only --diff-filter=ACMR | while IFS= read -r path; do
+  case "$path" in
+    .env.example|*/.env.example) ;;
+    .env|.env.*|*/.env|*/.env.*)
+      echo "Refusing to commit environment file: $path" >&2
+      exit 1
+      ;;
+  esac
+done
+
+gitleaks git --staged --redact --no-banner
